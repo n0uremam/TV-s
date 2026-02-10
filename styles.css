@@ -2,46 +2,36 @@
   --bg:#000;
   --panel:#0b0b0c;
   --gold:#c9a24d;
-  --muted:#b7b7b7;
+  --muted:#9a9a9a;
 }
 
 *{margin:0;padding:0;box-sizing:border-box;font-family:Roboto,Arial,sans-serif}
 body{background:var(--bg);color:#fff;height:100vh;overflow:hidden}
 
-/* Header */
+/* HEADER */
 .topbar{
   height:82px;
+  padding:0 18px;
   display:flex;
   justify-content:space-between;
   align-items:center;
-  padding:0 18px;
-  background:linear-gradient(to bottom,rgba(0,0,0,.95),rgba(0,0,0,.35));
+  background:linear-gradient(to bottom,rgba(0,0,0,.9),rgba(0,0,0,.4));
 }
 .brand{display:flex;align-items:center;gap:12px}
 .logo{width:46px}
-.name{font-weight:900;letter-spacing:2px;font-size:13px}
+.name{font-weight:900;letter-spacing:2px}
 .tagline{font-size:12px;color:var(--muted)}
 
-.hud{display:flex;gap:14px;align-items:center}
+.hud{display:flex;gap:12px}
 .hud-item{
-  background:rgba(255,255,255,.06);
+  background:rgba(255,255,255,.07);
   padding:10px 12px;
   border-radius:12px;
 }
 .hud-k{font-size:11px;color:#ccc}
-.hud-v{font-weight:900;margin-top:4px}
+.hud-v{font-weight:800;margin-top:3px}
 
-.controls{display:flex;gap:10px}
-.select,.btn{
-  background:rgba(255,255,255,.06);
-  border:1px solid rgba(255,255,255,.14);
-  color:#fff;
-  padding:10px 12px;
-  border-radius:12px;
-}
-.btn-small{padding:8px 10px}
-
-/* Layout */
+/* LAYOUT */
 .layout{
   height:calc(100vh - 82px);
   display:grid;
@@ -53,86 +43,75 @@ body{background:var(--bg);color:#fff;height:100vh;overflow:hidden}
   background:var(--panel);
   border-radius:18px;
   overflow:hidden;
-  position:relative;
 }
 
-/* Banner */
+/* BANNER */
 .banner{height:130px;position:relative}
-.banner img{width:100%;height:100%;object-fit:cover;filter:brightness(.55)}
-.banner-overlay{position:absolute;inset:0;background:linear-gradient(to right,rgba(0,0,0,.75),transparent)}
+.banner img{width:100%;height:100%;object-fit:cover;filter:brightness(.5)}
+.banner-overlay{position:absolute;inset:0;background:linear-gradient(to right,rgba(0,0,0,.8),transparent)}
 .banner-text{position:absolute;left:18px;bottom:14px}
 .banner-title{font-weight:900}
-.banner-sub{font-size:12px;color:#ddd;max-width:900px;margin-top:6px}
+.banner-sub{font-size:12px;color:#ddd}
 
-/* Media */
+/* MEDIA */
 .frame{
   height:calc(100% - 130px);
-  background:#000;
   display:flex;
   align-items:center;
   justify-content:center;
+  background:#000;
 }
 .frame img{
   width:100%;
   height:100%;
-  object-fit:contain; /* ✅ shrink-to-fit images */
-  object-position:center;
-  background:#000;
+  object-fit:contain;
 }
-.frame video{
-  width:100%;
-  height:100%;
-  object-fit:cover;
-  object-position:center;
-}
+.center{color:#888}
+.muted{color:#888}
 
-.center-msg{color:#aaa;text-align:center;padding:20px}
-.muted{color:#aaa}
-
-/* Overlay */
-.overlay{
-  position:absolute;
-  bottom:0;left:0;right:0;
-  padding:18px;
-  background:linear-gradient(to top,rgba(0,0,0,.7),transparent);
-  display:flex;
-  justify-content:space-between;
-}
-.overlay-title{font-size:22px;font-weight:900}
-.overlay-sub{font-size:12px;color:#ccc}
-.hint{font-size:12px;color:#ccc}
-#countdown{color:var(--gold);font-weight:900}
-
-/* Board */
+/* BOARD */
 .board-head{
   display:flex;
-  gap:10px;
+  gap:12px;
   padding:14px;
   border-bottom:1px solid rgba(255,255,255,.06);
 }
 .board-title{font-weight:900}
 .board-sub{margin-left:auto;font-size:12px;color:#ccc}
+.btn{
+  background:rgba(255,255,255,.08);
+  border:1px solid rgba(255,255,255,.15);
+  color:#fff;
+  padding:8px 12px;
+  border-radius:12px;
+}
 
+/* TABLE */
 .table-wrap{
-  height:calc(100% - 58px);
+  height:calc(100% - 60px);
   overflow:auto;
-  padding:10px;
 }
-.table{width:100%;border-collapse:collapse;font-size:12px}
-th,td{padding:10px;border-bottom:1px solid rgba(255,255,255,.06)}
-th{color:#ccc;text-align:left;position:sticky;top:0;background:rgba(0,0,0,.6);backdrop-filter:blur(6px)}
-td{color:#f2f2f2}
+.table{
+  width:100%;
+  border-collapse:collapse;
+  font-size:13px;
+}
+th,td{
+  padding:12px;
+  border-bottom:1px solid rgba(255,255,255,.08);
+}
+th{
+  text-align:left;
+  color:#ccc;
+  background:rgba(0,0,0,.6);
+  position:sticky;
+  top:0;
+}
+td{color:#f0f0f0}
 
-/* Status pill (premium) */
-.status-pill{
-  padding:6px 14px;
-  border-radius:999px;
-  font-weight:800;
-  font-size:12px;
-  display:inline-block;
-  white-space:nowrap;
-}
-.status-pill.in-progress{
-  background:linear-gradient(135deg,#3a2a00,#c9a24d);
-  color:#0b0b0c;
+/* Arabic alignment */
+td:first-child{
+  direction:rtl;
+  text-align:right;
+  font-weight:700;
 }
