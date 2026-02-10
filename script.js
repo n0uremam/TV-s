@@ -8,11 +8,31 @@ var MEDIA_PATH = "media/shared/";
 var MANIFEST_URL = MEDIA_PATH + "manifest.json";
 
 var frame = document.getElementById("mediaFrame");
-var mediaStatus = document.getElementById("mediaStatus");
 
 var playlist = [];
 var index = 0;
 var timer = null;
+
+/* Two image layers for cross-fade */
+var imgA = null;
+var imgB = null;
+var activeIsA = true;
+
+function ensureImageLayers(){
+  if (imgA && imgB) return;
+
+  imgA = document.createElement("img");
+  imgA.className = "media-layer is-active";
+  imgA.alt = "media";
+
+  imgB = document.createElement("img");
+  imgB.className = "media-layer";
+  imgB.alt = "media";
+
+  frame.innerHTML = "";         // remove "Loading media..."
+  frame.appendChild(imgA);
+  frame.appendChild(imgB);
+}
 
 function xhr(url, cb){
   var r = new XMLHttpRequest();
@@ -26,103 +46,123 @@ function xhr(url, cb){
   r.send();
 }
 
-function setStatus(txt){
-  if (mediaStatus) mediaStatus.textContent = txt || "—";
+function showFallback(){
+  frame.innerHTML =
+    '<img class="media-layer is-active" src="' + MEDIA_PATH + '01.jpg" alt="Fallback">';
 }
 
-function showFallback(reason){
-  setStatus("Media fallback (" + reason + ")");
-  frame.innerHTML = '<img src="' + MEDIA_PATH + 'banner.jpg" alt="Fallback">';
-}
-
-function reset(){
+function resetTimers(){
   if (timer) { clearTimeout(timer); timer = null; }
-  frame.innerHTML = "";
+}
+
+function removeVideoIfAny(){
+  var v = frame.querySelector("video");
+  if (v) {
+    try { v.pause(); } catch(_){}
+    v.parentNode.removeChild(v);
+  }
+}
+
+function crossfadeTo(src, cb){
+  ensureImageLayers();
+  removeVideoIfAny();
+
+  var incoming = activeIsA ? imgB : imgA;
+  var outgoing = activeIsA ? imgA : imgB;
+
+  incoming.onload = function(){
+    // start fade
+    incoming.classList.add("is-active");
+    outgoing.classList.remove("is-active");
+    activeIsA = !activeIsA;
+
+    // wait for fade to finish before continuing (optional)
+    setTimeout(function(){
+      if (typeof cb === "function") cb();
+    }, 950);
+  };
+
+  incoming.onerror = function(){
+    // if image missing, skip quickly
+    setTimeout(function(){
+      if (typeof cb === "function") cb();
+    }, 200);
+  };
+
+  incoming.src = MEDIA_PATH + src + "?t=" + Date.now();
 }
 
 function playNext(){
+  resetTimers();
+
   if (!playlist.length){
-    showFallback("empty playlist");
+    showFallback();
     return;
   }
-
-  reset();
 
   var item = playlist[index];
   index = (index + 1) % playlist.length;
 
-  // show which file currently playing
-  setStatus((item.type || "?") + " • " + (item.src || ""));
-
   if (item.type === "image"){
-    var img = new Image();
-    img.src = MEDIA_PATH + item.src;
-    img.onload = function(){
-      frame.innerHTML = "";
-      frame.appendChild(img);
-      var d = (item.duration || 10) * 1000;
-      timer = setTimeout(playNext, d);
-    };
-    img.onerror = function(){
-      setStatus("Missing image: " + item.src);
-      timer = setTimeout(playNext, 1200);
-    };
+    var durationMs = (item.duration || 10) * 1000;
+
+    crossfadeTo(item.src, function(){
+      timer = setTimeout(playNext, durationMs);
+    });
+
     return;
   }
 
   if (item.type === "video"){
+    ensureImageLayers();        // keep layers in DOM
+    removeVideoIfAny();         // clear previous video
+
+    // hide image layers while video plays
+    imgA.classList.remove("is-active");
+    imgB.classList.remove("is-active");
+
     var video = document.createElement("video");
     video.src = MEDIA_PATH + item.src;
     video.autoplay = true;
-    video.muted = true;      // TV-safe autoplay
+    video.muted = true;         // TV-safe autoplay
     video.playsInline = true;
     video.preload = "auto";
 
     video.onended = playNext;
-    video.onerror = function(){
-      setStatus("Video unsupported/missing: " + item.src);
-      timer = setTimeout(playNext, 1200);
-    };
+    video.onerror = playNext;
 
     frame.appendChild(video);
 
-    // Some TVs need explicit play()
     try{
       var p = video.play();
-      if (p && p.catch) p.catch(function(){
-        setStatus("Autoplay blocked: " + item.src);
-        timer = setTimeout(playNext, 1200);
-      });
+      if (p && p.catch) p.catch(function(){ playNext(); });
     }catch(e){
-      setStatus("Play failed: " + item.src);
-      timer = setTimeout(playNext, 1200);
+      playNext();
     }
     return;
   }
 
-  // unknown type
-  setStatus("Unknown type: " + item.type);
-  timer = setTimeout(playNext, 1200);
+  // unknown type => skip
+  timer = setTimeout(playNext, 400);
 }
 
 function loadManifest(){
-  setStatus("Loading manifest…");
   xhr(MANIFEST_URL + "?t=" + Date.now(), function(err, res){
     if (err){
-      showFallback("manifest " + err);
+      showFallback();
       return;
     }
     try{
       var json = JSON.parse(res);
       playlist = (json && json.items) ? json.items : [];
       if (!playlist.length){
-        showFallback("manifest has 0 items");
+        showFallback();
         return;
       }
       index = 0;
       playNext();
     }catch(e){
-      showFallback("manifest JSON error");
+      showFallback();
     }
   });
 }
@@ -166,11 +206,24 @@ function parseCSV(t){
   return rows;
 }
 
+function xhrTable(url, cb){
+  // reuse XHR without changing media function signatures
+  var r = new XMLHttpRequest();
+  r.open("GET", url, true);
+  r.timeout = 15000;
+  r.onload = function(){
+    if (r.status >= 200 && r.status < 300) cb(null, r.responseText);
+    else cb("HTTP " + r.status);
+  };
+  r.onerror = r.ontimeout = function(){ cb("NETWORK/TIMEOUT"); };
+  r.send();
+}
+
 function loadProgress(){
   progressBody.innerHTML = '<tr><td colspan="5" class="muted">Loading…</td></tr>';
   boardMeta.textContent = "Loading…";
 
-  xhr(CSV_URL + "&t=" + Date.now(), function(err, res){
+  xhrTable(CSV_URL + "&t=" + Date.now(), function(err, res){
     if (err){
       progressBody.innerHTML = '<tr><td colspan="5" class="muted">Offline</td></tr>';
       boardMeta.textContent = "Offline";
@@ -185,7 +238,6 @@ function loadProgress(){
       for (var i=0;i<rows.length;i++){
         var r = rows[i];
 
-        // ONLY: E,G,I,J,K
         var customer = (r[4]  || "").trim(); // E
         var model    = (r[6]  || "").trim(); // G
         var year     = (r[8]  || "").trim(); // I
@@ -244,20 +296,27 @@ tick();
 
 function loadWeather(){
   var url = "https://api.open-meteo.com/v1/forecast?latitude=30.0444&longitude=31.2357&current=temperature_2m";
-  xhr(url + "&t=" + Date.now(), function(err, res){
+  var r = new XMLHttpRequest();
+  r.open("GET", url + "&t=" + Date.now(), true);
+  r.timeout = 15000;
+  r.onload = function(){
     var el = document.getElementById("weatherCairo");
     if (!el) return;
-    if (err){ el.textContent = "--"; return; }
+    if (!(r.status >= 200 && r.status < 300)){ el.textContent="--"; return; }
     try{
-      var j = JSON.parse(res);
+      var j = JSON.parse(r.responseText);
       el.textContent = Math.round(j.current.temperature_2m) + "°C";
     }catch(e){
-      el.textContent = "--";
+      el.textContent="--";
     }
-  });
+  };
+  r.onerror = r.ontimeout = function(){
+    var el = document.getElementById("weatherCairo");
+    if (el) el.textContent="--";
+  };
+  r.send();
 }
 loadWeather();
 setInterval(loadWeather, 10*60*1000);
 
 })();
-
