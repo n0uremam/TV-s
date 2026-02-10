@@ -2,10 +2,17 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Abdo El Amir — Waiting Room Display</title>
 
-  <link href="https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet">
+  <!-- TV-safe auto refresh every 5 hours -->
+  <meta http-equiv="refresh" content="18000">
+
+  <!-- TV-safe font fallback: uses Roboto if available, otherwise system -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;600;800;900&display=swap" rel="stylesheet">
+
   <link rel="stylesheet" href="styles.css" />
 </head>
 
@@ -22,13 +29,13 @@
 
   <div class="hud">
     <div class="hud-item">
-      <div class="hud-k">Cairo Date</div>
-      <div class="hud-v" id="dateCairo">--</div>
+      <div class="hud-k">Date</div>
+      <div class="hud-v" id="dateLocal">--</div>
     </div>
 
     <div class="hud-item">
-      <div class="hud-k">Cairo Time</div>
-      <div class="hud-v" id="timeCairo">--:--:--</div>
+      <div class="hud-k">Time</div>
+      <div class="hud-v" id="timeLocal">--:--:--</div>
     </div>
 
     <div class="hud-item">
@@ -54,6 +61,7 @@
 
 <main class="layout">
 
+  <!-- LEFT: MEDIA -->
   <section class="stage">
     <div class="banner">
       <img src="media/banner.jpg" alt="Banner">
@@ -67,7 +75,9 @@
       </div>
     </div>
 
-    <div id="mediaFrame" class="frame"></div>
+    <div id="mediaFrame" class="frame">
+      <div class="center-msg muted">Loading media…</div>
+    </div>
 
     <div class="overlay">
       <div>
@@ -78,6 +88,7 @@
     </div>
   </section>
 
+  <!-- RIGHT: IN PROGRESS (TV-safe iframe, no JS fetch needed) -->
   <aside class="board">
     <div class="board-head">
       <div class="board-title">IN PROGRESS</div>
@@ -85,21 +96,15 @@
       <button id="refreshBtn" class="btn btn-small">Refresh</button>
     </div>
 
-    <div class="table-wrap">
-      <table class="table">
-        <thead>
-          <tr>
-            <th>Customer</th>
-            <th>Car Model</th>
-            <th>Year</th>
-            <th>Color</th>
-            <th>Chassis</th>
-          </tr>
-        </thead>
-        <tbody id="progressBody">
-          <tr><td colspan="5" class="muted">Loading…</td></tr>
-        </tbody>
-      </table>
+    <div class="iframe-wrap">
+      <!-- Your published sheet (HTML) -->
+      <iframe
+        id="sheetFrame"
+        title="In Progress"
+        loading="lazy"
+        referrerpolicy="no-referrer"
+        src="https://docs.google.com/spreadsheets/d/e/2PACX-1vSKpulVdyocoyi3Vj-BHBG9aOcfsG-QkgLtwlLGjbWFy_YkTmiN5mOsiYfWS6_sqLNtS4hCie2c3JDH/pubhtml?gid=2111665249&single=true"
+      ></iframe>
     </div>
   </aside>
 
