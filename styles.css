@@ -44,13 +44,13 @@ body{background:var(--bg);color:#fff;height:100vh;overflow:hidden}
   border-radius:18px;
   overflow:hidden;
 }
-
-.banner img{
-  width:100%;
-  height:100%;
-  object-fit:cover;
-  filter:brightness(.5);
-}
+/* Banner */
+.banner{height:130px;position:relative}
+.banner img{width:100%;height:100%;object-fit:cover;filter:brightness(.55)}
+.banner-overlay{position:absolute;inset:0;background:linear-gradient(to right,rgba(0,0,0,.75),transparent)}
+.banner-text{position:absolute;left:18px;bottom:14px}
+.banner-title{font-weight:900}
+.banner-sub{font-size:12px;color:#ddd;max-width:900px;margin-top:6px}
 
 
 
@@ -116,5 +116,6 @@ td:first-child{
   text-align:right;
   font-weight:700;
 }
+
 
 
