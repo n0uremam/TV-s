@@ -45,20 +45,13 @@ body{background:var(--bg);color:#fff;height:100vh;overflow:hidden}
   overflow:hidden;
 }
 
-.banner{
-  height:130px;
-  position:relative;
-  background:#000; /* clean background */
-}
-
 .banner img{
   width:100%;
   height:100%;
-  object-fit:contain;      /* ✅ SHRINK TO FIT */
-  object-position:center; /* center image */
-  background:#000;
-  filter:brightness(.9);  /* less dark since no crop */
+  object-fit:cover;
+  filter:brightness(.5);
 }
+
 
 
 /* MEDIA */
@@ -123,4 +116,5 @@ td:first-child{
   text-align:right;
   font-weight:700;
 }
+
 
