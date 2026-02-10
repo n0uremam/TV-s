@@ -19,7 +19,7 @@
     <img src="media/logo.png" class="logo" alt="Logo">
     <div>
       <div class="name">ABDO EL AMIR</div>
-      <div class="tagline" id="branchLabel">Nasr City Branch · Waiting Room</div>
+      <div class="tagline">Nasr City Branch · Waiting Room</div>
     </div>
   </div>
 
@@ -41,15 +41,15 @@
 
 <main class="layout">
 
-  <!-- LEFT -->
+  <!-- LEFT SIDE -->
   <section class="stage">
     <div class="banner">
-      <img src="media/banner.jpg">
+      <img src="media/banner.jpg" alt="Banner">
       <div class="banner-overlay"></div>
       <div class="banner-text">
         <div class="banner-title">Trusted for over 50 years in Egypt 🇪🇬</div>
         <div class="banner-sub">
-          We specialize in cars protective films · UAE 🇦🇪 & KSA 🇸🇦 soon
+          Cars protective films · UAE 🇦🇪 & KSA 🇸🇦 soon
         </div>
       </div>
     </div>
@@ -59,10 +59,16 @@
     </div>
   </section>
 
-  <!-- RIGHT -->
+  <!-- RIGHT SIDE -->
   <aside class="board">
     <div class="board-head">
-      <div class="board-title">IN PROGRESS</div>
+      <div>
+        <div class="board-title">IN PROGRESS</div>
+        <div class="qr-wrap">
+          <img src="media/qr.png" class="qr-icon" alt="QR Code">
+        </div>
+      </div>
+
       <div class="board-sub" id="boardMeta">Live</div>
       <button id="refreshBtn" class="btn">Refresh</button>
     </div>
@@ -79,7 +85,9 @@
           </tr>
         </thead>
         <tbody id="progressBody">
-          <tr><td colspan="5" class="muted">Loading…</td></tr>
+          <tr>
+            <td colspan="5" class="muted">Loading…</td>
+          </tr>
         </tbody>
       </table>
     </div>
