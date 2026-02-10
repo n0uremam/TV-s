@@ -5,10 +5,9 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Abdo El Amir — Waiting Room Display</title>
 
-  <!-- TV-safe auto refresh every 5 hours -->
+  <!-- Hard refresh every 5 hours (TV-safe) -->
   <meta http-equiv="refresh" content="18000">
 
-  <!-- TV-safe font fallback: uses Roboto if available, otherwise system -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;600;800;900&display=swap" rel="stylesheet">
@@ -88,7 +87,7 @@
     </div>
   </section>
 
-  <!-- RIGHT: IN PROGRESS (TV-safe iframe, no JS fetch needed) -->
+  <!-- RIGHT: IN PROGRESS (CSV table) -->
   <aside class="board">
     <div class="board-head">
       <div class="board-title">IN PROGRESS</div>
@@ -96,15 +95,21 @@
       <button id="refreshBtn" class="btn btn-small">Refresh</button>
     </div>
 
-    <div class="iframe-wrap">
-      <!-- Your published sheet (HTML) -->
-      <iframe
-        id="sheetFrame"
-        title="In Progress"
-        loading="lazy"
-        referrerpolicy="no-referrer"
-        src="https://docs.google.com/spreadsheets/d/e/2PACX-1vSKpulVdyocoyi3Vj-BHBG9aOcfsG-QkgLtwlLGjbWFy_YkTmiN5mOsiYfWS6_sqLNtS4hCie2c3JDH/pubhtml?gid=2111665249&single=true"
-      ></iframe>
+    <div class="table-wrap">
+      <table class="table">
+        <thead>
+          <tr>
+            <th># ORDER ID</th>
+            <th>STATUS</th>
+            <th>ORDER DATE</th>
+            <th>TIME</th>
+            <th>CHASSIS</th>
+          </tr>
+        </thead>
+        <tbody id="progressBody">
+          <tr><td colspan="5" class="muted">Loading…</td></tr>
+        </tbody>
+      </table>
     </div>
   </aside>
 
