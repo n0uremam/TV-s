@@ -5,9 +5,10 @@
   var branchSelect = document.getElementById("branchSelect");
   var muteBtn = document.getElementById("muteBtn");
   var countdownEl = document.getElementById("countdown");
-  var refreshBtn = document.getElementById("refreshBtn");
-  var sheetFrame = document.getElementById("sheetFrame");
+
+  var progressBody = document.getElementById("progressBody");
   var boardMeta = document.getElementById("boardMeta");
+  var refreshBtn = document.getElementById("refreshBtn");
 
   var muted = true;
   var playlist = [];
@@ -19,10 +20,15 @@
   var MANIFEST_URL = "media/shared/manifest.json";
   var MEDIA_BASE = "media/shared/";
 
+  // Published CSV (same sheet, output=csv)
+  var CSV_URL =
+    "https://docs.google.com/spreadsheets/d/e/2PACX-1vSKpulVdyocoyi3Vj-BHBG9aOcfsG-QkgLtwlLGjbWFy_YkTmiN5mOsiYfWS6_sqLNtS4hCie2c3JDH/pub?gid=2111665249&single=true&output=csv";
+
+  /* ---------- XHR ---------- */
   function xhrGet(url, timeoutMs, cb){
     var x = new XMLHttpRequest();
     x.open("GET", url, true);
-    x.timeout = timeoutMs || 10000;
+    x.timeout = timeoutMs || 12000;
     x.onreadystatechange = function(){
       if (x.readyState === 4){
         if (x.status >= 200 && x.status < 300) cb(null, x.responseText);
@@ -34,6 +40,45 @@
     x.send();
   }
 
+  function esc(s){
+    s = (s === undefined || s === null) ? "" : String(s);
+    return s
+      .replace(/&/g,"&amp;")
+      .replace(/</g,"&lt;")
+      .replace(/>/g,"&gt;")
+      .replace(/"/g,"&quot;")
+      .replace(/'/g,"&#039;");
+  }
+
+  /* ---------- CSV parser (supports quotes/commas) ---------- */
+  function parseCSV(text){
+    var rows = [];
+    var row = [];
+    var cur = "";
+    var inQuotes = false;
+
+    for (var i=0;i<text.length;i++){
+      var c = text[i];
+      var n = text[i+1];
+
+      if (c === '"' && inQuotes && n === '"'){ cur += '"'; i++; }
+      else if (c === '"'){ inQuotes = !inQuotes; }
+      else if (c === "," && !inQuotes){ row.push(cur); cur=""; }
+      else if ((c === "\n" || c === "\r") && !inQuotes){
+        if (cur.length || row.length) row.push(cur);
+        if (row.length) rows.push(row);
+        row = []; cur = "";
+      } else {
+        cur += c;
+      }
+    }
+    if (cur.length || row.length){ row.push(cur); rows.push(row); }
+    return rows;
+  }
+
+  /* =========================
+     MEDIA
+  ========================= */
   function shuffle(a){
     for (var i=a.length-1;i>0;i--){
       var j = Math.floor(Math.random()*(i+1));
@@ -41,7 +86,7 @@
     }
   }
 
-  function clearTimers(){
+  function clearMediaTimers(){
     if (nextTimer) clearTimeout(nextTimer);
     if (countTimer) clearInterval(countTimer);
     nextTimer = null;
@@ -59,27 +104,20 @@
     }, 1000);
   }
 
-  function renderMessage(msg){
-    mediaFrame.innerHTML = '<div class="center-msg muted">' + msg + '</div>';
+  function renderMediaMsg(msg){
+    mediaFrame.innerHTML = '<div class="center-msg muted">' + esc(msg) + '</div>';
     countdownEl.textContent = "--";
   }
 
   function loadManifest(){
-    renderMessage("Loading media…");
-
+    renderMediaMsg("Loading media…");
     xhrGet(MANIFEST_URL + "?t=" + Date.now(), 12000, function(err, text){
-      if (err){
-        renderMessage("No media (manifest not reachable)");
-        return;
-      }
+      if (err){ renderMediaMsg("No media (manifest not reachable)"); return; }
 
       try{
         var data = JSON.parse(text);
         var items = data.items || [];
-        if (!items.length){
-          renderMessage("No media (manifest empty)");
-          return;
-        }
+        if (!items.length){ renderMediaMsg("No media (manifest empty)"); return; }
 
         playlist = [];
         for (var i=0;i<items.length;i++){
@@ -94,7 +132,7 @@
         idx = 0;
         playCurrent();
       }catch(e){
-        renderMessage("No media (manifest JSON error)");
+        renderMediaMsg("No media (manifest JSON error)");
       }
     });
   }
@@ -107,11 +145,8 @@
   }
 
   function playCurrent(){
-    clearTimers();
-    if (!playlist.length){
-      renderMessage("No media");
-      return;
-    }
+    clearMediaTimers();
+    if (!playlist.length){ renderMediaMsg("No media"); return; }
 
     var item = playlist[idx];
     mediaFrame.innerHTML = "";
@@ -124,17 +159,17 @@
         mediaFrame.appendChild(img);
       };
       img.onerror = function(){
-        renderMessage("Missing image: " + item.src);
+        renderMediaMsg("Missing image: " + item.src);
         nextTimer = setTimeout(next, 2000);
       };
 
       var d = item.duration || 6;
       startCountdown(d);
-      nextTimer = setTimeout(next, d*1000);
+      nextTimer = setTimeout(next, d * 1000);
       return;
     }
 
-    // video: TV browsers may fail autoplay or codec -> fallback to next
+    // video fallback (skip if not supported)
     var v = document.createElement("video");
     v.src = item.src;
     v.autoplay = true;
@@ -149,34 +184,33 @@
     };
     v.onended = next;
     v.onerror = function(){
-      // fallback: skip video if TV can’t play it
-      renderMessage("Video not supported, skipping…");
+      renderMediaMsg("Video not supported, skipping…");
       nextTimer = setTimeout(next, 1500);
     };
 
     mediaFrame.appendChild(v);
 
-    // some TVs refuse play() promise; ignore and move on if needed
     try{
       var p = v.play();
-      // if promise exists, catch
       if (p && typeof p.catch === "function"){
         p.catch(function(){
-          renderMessage("Autoplay blocked, skipping…");
+          renderMediaMsg("Autoplay blocked, skipping…");
           nextTimer = setTimeout(next, 1500);
         });
       }
     }catch(e){
-      renderMessage("Video play failed, skipping…");
+      renderMediaMsg("Video play failed, skipping…");
       nextTimer = setTimeout(next, 1500);
     }
   }
 
-  // Time/Date (TV-safe: uses TV device time)
+  /* =========================
+     LOCAL DATE/TIME (TV-safe)
+  ========================= */
   function tickLocal(){
     var now = new Date();
-
     function pad(n){ return (n<10 ? "0"+n : ""+n); }
+
     var hh = pad(now.getHours());
     var mm = pad(now.getMinutes());
     var ss = pad(now.getSeconds());
@@ -191,7 +225,9 @@
   setInterval(tickLocal, 1000);
   tickLocal();
 
-  // Weather (Cairo) with XHR
+  /* =========================
+     WEATHER (Cairo) via XHR
+  ========================= */
   function loadWeather(){
     var url = "https://api.open-meteo.com/v1/forecast?latitude=30.0444&longitude=31.2357&current=temperature_2m";
     xhrGet(url + "&t=" + Date.now(), 10000, function(err, text){
@@ -211,7 +247,78 @@
   loadWeather();
   setInterval(loadWeather, 10*60*1000);
 
-  // Branch UI (same shared media)
+  /* =========================
+     IN PROGRESS (ONLY E,F,G,H,J)
+     E=4, F=5, G=6, H=7, J=9
+  ========================= */
+  function loadProgress(){
+    progressBody.innerHTML = '<tr><td colspan="5" class="muted">Loading…</td></tr>';
+    boardMeta.textContent = "Loading…";
+
+    xhrGet(CSV_URL + "&t=" + Date.now(), 12000, function(err, csvText){
+      if (err){
+        progressBody.innerHTML = '<tr><td colspan="5" class="muted">Offline</td></tr>';
+        boardMeta.textContent = "Offline";
+        return;
+      }
+
+      try{
+        var rows = parseCSV(csvText);
+        var data = rows.slice(1); // remove header
+
+        // remove empty lines
+        var clean = [];
+        for (var i=0;i<data.length;i++){
+          var r = data[i];
+          var hasAny = false;
+          for (var k=0;k<r.length;k++){
+            if ((r[k] || "").trim() !== "") { hasAny = true; break; }
+          }
+          if (hasAny) clean.push(r);
+        }
+
+        if (!clean.length){
+          progressBody.innerHTML = '<tr><td colspan="5" class="muted">No orders in progress.</td></tr>';
+          boardMeta.textContent = "Live • 0";
+          return;
+        }
+
+        var html = "";
+        for (var j=0;j<clean.length;j++){
+          var r2 = clean[j];
+
+          var E = (r2[4] || "").trim();
+          var F = (r2[5] || "").trim();
+          var G = (r2[6] || "").trim();
+          var H = (r2[7] || "").trim();
+          var J = (r2[9] || "").trim();
+
+          html += "<tr>";
+          html += "<td>" + esc(E) + "</td>";
+          html += "<td><span class='status-pill in-progress'>" + esc(F || "In progress") + "</span></td>";
+          html += "<td>" + esc(G) + "</td>";
+          html += "<td>" + esc(H) + "</td>";
+          html += "<td>" + esc(J) + "</td>";
+          html += "</tr>";
+        }
+
+        progressBody.innerHTML = html;
+        boardMeta.textContent = "Live • " + clean.length;
+      }catch(e){
+        progressBody.innerHTML = '<tr><td colspan="5" class="muted">Error</td></tr>';
+        boardMeta.textContent = "Error";
+      }
+    });
+  }
+
+  refreshBtn.onclick = loadProgress;
+
+  // Auto refresh progress every 30 seconds (TV-safe)
+  setInterval(loadProgress, 30000);
+
+  /* =========================
+     UI EVENTS
+  ========================= */
   branchSelect.onchange = function(){
     var label = branchSelect.options[branchSelect.selectedIndex].text;
     overlayBranch.textContent = label;
@@ -225,18 +332,15 @@
     if (vid) vid.muted = muted;
   };
 
-  // Sheet refresh: reload iframe (TV-safe)
-  refreshBtn.onclick = function(){
-    boardMeta.textContent = "Refreshing…";
-    sheetFrame.src = sheetFrame.src.split("&t=")[0] + "&t=" + Date.now();
-    setTimeout(function(){ boardMeta.textContent = "Live"; }, 800);
-  };
+  /* =========================
+     EXTRA SAFETY REFRESH (5 hours)
+  ========================= */
+  setTimeout(function(){ location.reload(); }, 18000 * 1000);
 
-  // Auto-refresh sheet iframe every 2 minutes (keeps it alive on TVs)
-  setInterval(function(){
-    sheetFrame.src = sheetFrame.src.split("&t=")[0] + "&t=" + Date.now();
-  }, 2*60*1000);
-
-  // Init
+  /* =========================
+     INIT
+  ========================= */
   loadManifest();
+  loadProgress();
+
 })();
