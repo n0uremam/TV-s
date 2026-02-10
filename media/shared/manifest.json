@@ -1,7 +1,8 @@
 {
   "items": [
-    { "type": "image", "src": "01.jpg", "duration": 6 },
+    { "type": "image", "src": "01.jpg", "duration": 15 },
     { "type": "video", "src": "02.mp4" },
-    { "type": "image", "src": "03.jpg", "duration": 6 }
+    { "type": "image", "src": "03.jpg", "duration": 15 }
   ]
+
 }
