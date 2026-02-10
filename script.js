@@ -1,281 +1,242 @@
-const mediaFrame = document.getElementById("mediaFrame");
-const overlayBranch = document.getElementById("overlayBranch");
-const branchLabel = document.getElementById("branchLabel");
-const branchSelect = document.getElementById("branchSelect");
-const muteBtn = document.getElementById("muteBtn");
-const countdownEl = document.getElementById("countdown");
+(function(){
+  var mediaFrame = document.getElementById("mediaFrame");
+  var overlayBranch = document.getElementById("overlayBranch");
+  var branchLabel = document.getElementById("branchLabel");
+  var branchSelect = document.getElementById("branchSelect");
+  var muteBtn = document.getElementById("muteBtn");
+  var countdownEl = document.getElementById("countdown");
+  var refreshBtn = document.getElementById("refreshBtn");
+  var sheetFrame = document.getElementById("sheetFrame");
+  var boardMeta = document.getElementById("boardMeta");
 
-const progressBody = document.getElementById("progressBody");
-const boardMeta = document.getElementById("boardMeta");
-const refreshBtn = document.getElementById("refreshBtn");
+  var muted = true;
+  var playlist = [];
+  var idx = 0;
+  var nextTimer = null;
+  var countTimer = null;
 
-let muted = true;
-let playlist = [];
-let index = 0;
-let timer = null;
-let countdownTimer = null;
+  // Shared playlist for all branches
+  var MANIFEST_URL = "media/shared/manifest.json";
+  var MEDIA_BASE = "media/shared/";
 
-const MANIFEST_URL = `media/shared/manifest.json`;
-const BASE = `media/shared/`;
-
-/* =========================
-   MEDIA
-========================= */
-
-function clearMediaTimers(){
-  clearTimeout(timer);
-  clearInterval(countdownTimer);
-}
-
-function shuffle(arr){
-  for(let i=arr.length-1;i>0;i--){
-    const j=Math.floor(Math.random()*(i+1));
-    [arr[i],arr[j]]=[arr[j],arr[i]];
-  }
-}
-
-async function loadManifest(){
-  try{
-    const r = await fetch(`${MANIFEST_URL}?t=${Date.now()}`, { cache:"no-store" });
-    if (!r.ok) throw new Error(`Manifest HTTP ${r.status}`);
-    const j = await r.json();
-
-    playlist = (j.items || []).map(it => ({
-      ...it,
-      src: BASE + it.src
-    }));
-
-    if (!playlist.length) throw new Error("Manifest has 0 items");
-
-    shuffle(playlist);
-    play();
-  }catch(e){
-    mediaFrame.innerHTML = `
-      <div style="color:#aaa;display:flex;align-items:center;justify-content:center;height:100%;text-align:center;padding:20px;line-height:1.6">
-        <div>
-          <div style="font-weight:800;margin-bottom:6px">No media</div>
-          <div style="color:#777;font-size:12px">Debug: ${e.message}</div>
-        </div>
-      </div>`;
-  }
-}
-
-function startCountdown(sec){
-  clearInterval(countdownTimer);
-  let s = sec;
-  countdownEl.textContent = s;
-  countdownTimer = setInterval(() => {
-    s--;
-    countdownEl.textContent = Math.max(s,0);
-    if(s<=0) clearInterval(countdownTimer);
-  }, 1000);
-}
-
-function next(){
-  if (!playlist.length) return;
-  index = (index + 1) % playlist.length;
-  if(index === 0) shuffle(playlist);
-  play();
-}
-
-function play(){
-  clearMediaTimers();
-  if(!playlist.length) return;
-
-  const item = playlist[index];
-  mediaFrame.innerHTML = "";
-
-  if(item.type === "image"){
-    const img = new Image();
-    img.src = item.src;
-    img.onerror = () => {
-      mediaFrame.innerHTML = `<div style="color:#aaa;display:flex;align-items:center;justify-content:center;height:100%">Missing file: ${item.src}</div>`;
+  function xhrGet(url, timeoutMs, cb){
+    var x = new XMLHttpRequest();
+    x.open("GET", url, true);
+    x.timeout = timeoutMs || 10000;
+    x.onreadystatechange = function(){
+      if (x.readyState === 4){
+        if (x.status >= 200 && x.status < 300) cb(null, x.responseText);
+        else cb(new Error("HTTP " + x.status), null);
+      }
     };
-    mediaFrame.appendChild(img);
-
-    const d = item.duration || 6;
-    startCountdown(d);
-    timer = setTimeout(next, d * 1000);
-    return;
+    x.ontimeout = function(){ cb(new Error("TIMEOUT"), null); };
+    x.onerror = function(){ cb(new Error("NETWORK"), null); };
+    x.send();
   }
 
-  const v = document.createElement("video");
-  v.src = item.src;
-  v.autoplay = true;
-  v.muted = muted;
-  v.playsInline = true;
-  v.preload = "auto";
-  v.controls = false;
-
-  v.onloadedmetadata = () => startCountdown(Math.ceil(v.duration || 8));
-  v.onended = next;
-  v.onerror = next;
-
-  mediaFrame.appendChild(v);
-
-  v.play().catch(() => {
-    startCountdown(6);
-    timer = setTimeout(next, 6000);
-  });
-}
-
-/* =========================
-   TIME + DATE (CAIRO)
-========================= */
-
-function tickCairo(){
-  const now = new Date();
-
-  document.getElementById("timeCairo").textContent =
-    new Intl.DateTimeFormat("en-GB", {
-      timeZone:"Africa/Cairo",
-      hour:"2-digit", minute:"2-digit", second:"2-digit"
-    }).format(now);
-
-  document.getElementById("dateCairo").textContent =
-    new Intl.DateTimeFormat("en-GB", {
-      timeZone:"Africa/Cairo",
-      weekday:"short", day:"2-digit", month:"short", year:"numeric"
-    }).format(now);
-}
-setInterval(tickCairo, 1000);
-tickCairo();
-
-/* =========================
-   WEATHER (CAIRO)
-========================= */
-
-async function loadWeather(){
-  try{
-    const r = await fetch(
-      "https://api.open-meteo.com/v1/forecast?latitude=30.0444&longitude=31.2357&current=temperature_2m&timezone=Africa%2FCairo",
-      { cache:"no-store" }
-    );
-    const j = await r.json();
-    document.getElementById("weatherCairo").textContent =
-      Math.round(j.current.temperature_2m) + "°C";
-  }catch{
-    document.getElementById("weatherCairo").textContent = "--";
+  function shuffle(a){
+    for (var i=a.length-1;i>0;i--){
+      var j = Math.floor(Math.random()*(i+1));
+      var t = a[i]; a[i]=a[j]; a[j]=t;
+    }
   }
-}
-loadWeather();
-setInterval(loadWeather, 10 * 60 * 1000);
 
-/* =========================
-   IN PROGRESS (Google Sheet Published CSV)
-   Columns: E,G,I,H,J  => idx 4,6,8,7,9
-========================= */
-
-const CSV_URL =
-  "https://docs.google.com/spreadsheets/d/e/2PACX-1vSKpulVdyocoyi3Vj-BHBG9aOcfsG-QkgLtwlLGjbWFy_YkTmiN5mOsiYfWS6_sqLNtS4hCie2c3JDH/pub?gid=2111665249&single=true&output=csv";
-
-function parseCSV(text) {
-  const rows = [];
-  let row = [], cur = "", inQuotes = false;
-
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    const next = text[i + 1];
-
-    if (c === '"' && inQuotes && next === '"') { cur += '"'; i++; }
-    else if (c === '"') inQuotes = !inQuotes;
-    else if (c === "," && !inQuotes) { row.push(cur.trim()); cur = ""; }
-    else if ((c === "\n" || c === "\r") && !inQuotes) {
-      if (cur.length || row.length) row.push(cur.trim());
-      if (row.length) rows.push(row);
-      row = []; cur = "";
-    } else cur += c;
+  function clearTimers(){
+    if (nextTimer) clearTimeout(nextTimer);
+    if (countTimer) clearInterval(countTimer);
+    nextTimer = null;
+    countTimer = null;
   }
-  if (cur.length || row.length) { row.push(cur.trim()); rows.push(row); }
-  return rows;
-}
 
-function esc(s){
-  return String(s ?? "")
-    .replaceAll("&","&amp;")
-    .replaceAll("<","&lt;")
-    .replaceAll(">","&gt;")
-    .replaceAll('"',"&quot;")
-    .replaceAll("'","&#039;");
-}
-
-async function fetchWithTimeout(url, ms=12000){
-  const controller = new AbortController();
-  const t = setTimeout(() => controller.abort(), ms);
-  try{
-    const res = await fetch(url, { cache:"no-store", signal: controller.signal });
-    clearTimeout(t);
-    return res;
-  }catch(e){
-    clearTimeout(t);
-    throw e;
+  function startCountdown(sec){
+    clearInterval(countTimer);
+    var s = sec;
+    countdownEl.textContent = String(s);
+    countTimer = setInterval(function(){
+      s--;
+      countdownEl.textContent = String(Math.max(s,0));
+      if (s <= 0) clearInterval(countTimer);
+    }, 1000);
   }
-}
 
-async function loadProgress(){
-  progressBody.innerHTML = `<tr><td colspan="5" class="muted">Loading…</td></tr>`;
-  boardMeta.textContent = "Loading…";
+  function renderMessage(msg){
+    mediaFrame.innerHTML = '<div class="center-msg muted">' + msg + '</div>';
+    countdownEl.textContent = "--";
+  }
 
-  try{
-    const r = await fetchWithTimeout(`${CSV_URL}&ts=${Date.now()}`, 12000);
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  function loadManifest(){
+    renderMessage("Loading media…");
 
-    const csv = await r.text();
-    const rows = parseCSV(csv);
+    xhrGet(MANIFEST_URL + "?t=" + Date.now(), 12000, function(err, text){
+      if (err){
+        renderMessage("No media (manifest not reachable)");
+        return;
+      }
 
-    // remove header + empty rows
-    const data = rows.slice(1).filter(r => r.some(cell => (cell || "").trim() !== ""));
+      try{
+        var data = JSON.parse(text);
+        var items = data.items || [];
+        if (!items.length){
+          renderMessage("No media (manifest empty)");
+          return;
+        }
 
-    if(!data.length){
-      progressBody.innerHTML = `<tr><td colspan="5" class="muted">No cars in progress.</td></tr>`;
-      boardMeta.textContent = "Live • 0";
+        playlist = [];
+        for (var i=0;i<items.length;i++){
+          playlist.push({
+            type: items[i].type,
+            src: MEDIA_BASE + items[i].src,
+            duration: items[i].duration
+          });
+        }
+
+        shuffle(playlist);
+        idx = 0;
+        playCurrent();
+      }catch(e){
+        renderMessage("No media (manifest JSON error)");
+      }
+    });
+  }
+
+  function next(){
+    if (!playlist.length) return;
+    idx = (idx + 1) % playlist.length;
+    if (idx === 0) shuffle(playlist);
+    playCurrent();
+  }
+
+  function playCurrent(){
+    clearTimers();
+    if (!playlist.length){
+      renderMessage("No media");
       return;
     }
 
-    progressBody.innerHTML = data.map(r => `
-      <tr>
-        <td>${esc(r[4])}</td>
-        <td>${esc(r[6])}</td>
-        <td>${esc(r[8])}</td>
-        <td>${esc(r[7])}</td>
-        <td>${esc(r[9])}</td>
-      </tr>
-    `).join("");
+    var item = playlist[idx];
+    mediaFrame.innerHTML = "";
 
-    boardMeta.textContent = `Live • ${data.length}`;
-  }catch(e){
-    progressBody.innerHTML = `<tr><td colspan="5" class="muted">Offline</td></tr>`;
-    boardMeta.textContent = "Offline";
+    if (item.type === "image"){
+      var img = new Image();
+      img.src = item.src;
+      img.onload = function(){
+        mediaFrame.innerHTML = "";
+        mediaFrame.appendChild(img);
+      };
+      img.onerror = function(){
+        renderMessage("Missing image: " + item.src);
+        nextTimer = setTimeout(next, 2000);
+      };
+
+      var d = item.duration || 6;
+      startCountdown(d);
+      nextTimer = setTimeout(next, d*1000);
+      return;
+    }
+
+    // video: TV browsers may fail autoplay or codec -> fallback to next
+    var v = document.createElement("video");
+    v.src = item.src;
+    v.autoplay = true;
+    v.muted = muted;
+    v.playsInline = true;
+    v.preload = "auto";
+    v.controls = false;
+
+    v.onloadedmetadata = function(){
+      var d2 = Math.ceil(v.duration || 8);
+      startCountdown(d2);
+    };
+    v.onended = next;
+    v.onerror = function(){
+      // fallback: skip video if TV can’t play it
+      renderMessage("Video not supported, skipping…");
+      nextTimer = setTimeout(next, 1500);
+    };
+
+    mediaFrame.appendChild(v);
+
+    // some TVs refuse play() promise; ignore and move on if needed
+    try{
+      var p = v.play();
+      // if promise exists, catch
+      if (p && typeof p.catch === "function"){
+        p.catch(function(){
+          renderMessage("Autoplay blocked, skipping…");
+          nextTimer = setTimeout(next, 1500);
+        });
+      }
+    }catch(e){
+      renderMessage("Video play failed, skipping…");
+      nextTimer = setTimeout(next, 1500);
+    }
   }
-}
 
-refreshBtn.addEventListener("click", loadProgress);
-setInterval(loadProgress, 30000);
-loadProgress();
+  // Time/Date (TV-safe: uses TV device time)
+  function tickLocal(){
+    var now = new Date();
 
-/* =========================
-   UI EVENTS
-========================= */
+    function pad(n){ return (n<10 ? "0"+n : ""+n); }
+    var hh = pad(now.getHours());
+    var mm = pad(now.getMinutes());
+    var ss = pad(now.getSeconds());
 
-muteBtn.onclick = () => {
-  muted = !muted;
-  muteBtn.textContent = muted ? "Muted" : "Sound On";
-  const v = mediaFrame.querySelector("video");
-  if (v) v.muted = muted;
-};
+    var days = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+    var months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
-branchSelect.onchange = () => {
-  const label = branchSelect.selectedOptions[0].text;
-  overlayBranch.textContent = label;
-  branchLabel.textContent = `${label} Branch • Waiting Room Display`;
-};
+    document.getElementById("timeLocal").textContent = hh + ":" + mm + ":" + ss;
+    document.getElementById("dateLocal").textContent =
+      days[now.getDay()] + ", " + pad(now.getDate()) + " " + months[now.getMonth()] + " " + now.getFullYear();
+  }
+  setInterval(tickLocal, 1000);
+  tickLocal();
 
-/* =========================
-   AUTO REFRESH PAGE (5 HOURS)
-========================= */
-setTimeout(() => location.reload(), 5 * 60 * 60 * 1000);
+  // Weather (Cairo) with XHR
+  function loadWeather(){
+    var url = "https://api.open-meteo.com/v1/forecast?latitude=30.0444&longitude=31.2357&current=temperature_2m";
+    xhrGet(url + "&t=" + Date.now(), 10000, function(err, text){
+      if (err){
+        document.getElementById("weatherCairo").textContent = "--";
+        return;
+      }
+      try{
+        var j = JSON.parse(text);
+        var t = j && j.current && j.current.temperature_2m;
+        document.getElementById("weatherCairo").textContent = (Math.round(t) + "°C");
+      }catch(e){
+        document.getElementById("weatherCairo").textContent = "--";
+      }
+    });
+  }
+  loadWeather();
+  setInterval(loadWeather, 10*60*1000);
 
-/* =========================
-   INIT
-========================= */
-loadManifest();
+  // Branch UI (same shared media)
+  branchSelect.onchange = function(){
+    var label = branchSelect.options[branchSelect.selectedIndex].text;
+    overlayBranch.textContent = label;
+    branchLabel.textContent = label + " Branch • Waiting Room Display";
+  };
+
+  muteBtn.onclick = function(){
+    muted = !muted;
+    muteBtn.textContent = muted ? "Muted" : "Sound On";
+    var vid = mediaFrame.querySelector("video");
+    if (vid) vid.muted = muted;
+  };
+
+  // Sheet refresh: reload iframe (TV-safe)
+  refreshBtn.onclick = function(){
+    boardMeta.textContent = "Refreshing…";
+    sheetFrame.src = sheetFrame.src.split("&t=")[0] + "&t=" + Date.now();
+    setTimeout(function(){ boardMeta.textContent = "Live"; }, 800);
+  };
+
+  // Auto-refresh sheet iframe every 2 minutes (keeps it alive on TVs)
+  setInterval(function(){
+    sheetFrame.src = sheetFrame.src.split("&t=")[0] + "&t=" + Date.now();
+  }, 2*60*1000);
+
+  // Init
+  loadManifest();
+})();
