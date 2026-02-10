@@ -4,7 +4,7 @@
    MEDIA PLAYER (TV SAFE)
 ========================= */
 
-var MEDIA_PATH = "media/";
+var MEDIA_PATH = "media/shared/";
 var MANIFEST_URL = MEDIA_PATH + "manifest.json";
 
 var frame = document.getElementById("mediaFrame");
@@ -260,3 +260,4 @@ loadWeather();
 setInterval(loadWeather, 10*60*1000);
 
 })();
+
