@@ -2,7 +2,11 @@
   "items": [
     { "type": "image", "src": "01.jpg", "duration": 15 },
     { "type": "video", "src": "02.mp4" },
-    { "type": "image", "src": "03.jpg", "duration": 15 }
+    { "type": "image", "src": "03.jpg", "duration": 15 },
+    { "type": "video", "src": "04.mp4" },
+    { "type": "video", "src": "05.mp4" },
+    { "type": "video", "src": "06.mp4" },
   ]
 
 }
+
