@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Abdo El Amir — Waiting Room Display</title>
+
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+</head>
+
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <img src="media/logo.png" class="logo" alt="Abdo El Amir">
+    <div>
+      <div class="name">ABDO EL AMIR</div>
+      <div class="tagline" id="branchLabel">Dubai Branch • Waiting Room Display</div>
+    </div>
+  </div>
+
+  <div class="hud">
+    <div class="hud-item">
+      <div class="hud-k">Cairo Date</div>
+      <div class="hud-v" id="dateCairo">--</div>
+    </div>
+
+    <div class="hud-item">
+      <div class="hud-k">Cairo Time</div>
+      <div class="hud-v" id="timeCairo">--:--:--</div>
+    </div>
+
+    <div class="hud-item">
+      <div class="hud-k">Weather</div>
+      <div class="hud-v" id="weatherCairo">--</div>
+    </div>
+
+    <div class="controls">
+      <select id="branchSelect" class="select">
+        <option value="dubai" selected>Dubai</option>
+        <option value="nasr">Nasr City</option>
+        <option value="maadi">Maadi</option>
+        <option value="zayed">Sheikh Zayed</option>
+        <option value="october">6th of October</option>
+        <option value="fifth">5th Settlement</option>
+        <option value="tanta">Tanta</option>
+      </select>
+
+      <button id="muteBtn" class="btn">Muted</button>
+    </div>
+  </div>
+</header>
+
+<main class="layout">
+
+  <section class="stage">
+    <div class="banner">
+      <img src="media/banner.jpg" alt="Banner">
+      <div class="banner-overlay"></div>
+      <div class="banner-text">
+        <div class="banner-title">Trusted for over 50 years in Egypt 🇪🇬</div>
+        <div class="banner-sub">
+          We specialize in cars protective films to keep your car in top condition.
+          With multiple branches across the country and soon in UAE 🇦🇪 and KSA 🇸🇦
+        </div>
+      </div>
+    </div>
+
+    <div id="mediaFrame" class="frame"></div>
+
+    <div class="overlay">
+      <div>
+        <div class="overlay-title" id="overlayBranch">Dubai</div>
+        <div class="overlay-sub">PPF • Tint • Wrap • Detailing</div>
+      </div>
+      <div class="hint">Next in <span id="countdown">--</span>s</div>
+    </div>
+  </section>
+
+  <aside class="board">
+    <div class="board-head">
+      <div class="board-title">IN PROGRESS</div>
+      <div class="board-sub" id="boardMeta">Live</div>
+      <button id="refreshBtn" class="btn btn-small">Refresh</button>
+    </div>
+
+    <div class="table-wrap">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Customer</th>
+            <th>Car Model</th>
+            <th>Year</th>
+            <th>Color</th>
+            <th>Chassis</th>
+          </tr>
+        </thead>
+        <tbody id="progressBody">
+          <tr><td colspan="5" class="muted">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </aside>
+
+</main>
+
+<script src="script.js"></script>
+</body>
+</html>
