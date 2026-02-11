@@ -10,8 +10,10 @@
     { "type": "image", "src": "08.jpg", "duration": 15 },
     { "type": "image", "src": "09.jpg", "duration": 15 },
     { "type": "image", "src": "10.jpg", "duration": 15 },
-    { "type": "video", "src": "11.mp4" }
+    { "type": "video", "src": "11.mp4" },
+    { "type": "video", "src": "12.mp4" } 
   ]
 }
+
 
 
