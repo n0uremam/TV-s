@@ -8,7 +8,6 @@ setTimeout(function(){ location.reload(); }, 3600 * 1000);
 /* =========================
    SHARED: XHR + CSV
 ========================= */
-
 function xhr(url, cb){
   var r = new XMLHttpRequest();
   r.open("GET", url, true);
@@ -44,7 +43,7 @@ function parseCSV(t){
 }
 
 /* =========================
-   MEDIA PLAYER (manifest)
+   MEDIA PLAYER (manifest) + crossfade images
 ========================= */
 var MEDIA_PATH = "media/shared/";
 var MANIFEST_URL = MEDIA_PATH + "manifest.json";
@@ -111,7 +110,6 @@ function crossfadeTo(src, cb){
 
 function playNext(){
   resetTimers();
-
   if (!playlist.length){ showFallback(); return; }
 
   var item = playlist[index];
@@ -169,7 +167,6 @@ function loadManifest(){
     }
   });
 }
-
 loadManifest();
 
 /* =========================
@@ -228,20 +225,15 @@ function loadProgress(){
       progressBody.innerHTML = html;
       boardMeta.textContent = "Live · " + count;
 
+      // re-enable auto-scroll after rendering
+      setTimeout(function(){ enableAutoScroll("progressWrap"); }, 300);
+
     }catch(e){
       progressBody.innerHTML = '<tr><td colspan="5" class="muted">Error</td></tr>';
       boardMeta.textContent = "Error";
     }
   });
 }
-
-if (refreshBtn) refreshBtn.onclick = function(){
-  loadProgress();
-  loadRevisit();
-};
-
-setInterval(loadProgress, 30000);
-loadProgress();
 
 /* =========================
    REVISIT BOOKING TODAY (A,D,F,G)
@@ -290,11 +282,15 @@ function loadRevisit(){
       if (!html){
         revisitBody.innerHTML = '<tr><td colspan="4" class="muted">No bookings today</td></tr>';
         if (revisitMeta) revisitMeta.textContent = "Live · 0";
+        setTimeout(function(){ enableAutoScroll("revisitWrap"); }, 300);
         return;
       }
 
       revisitBody.innerHTML = html;
       if (revisitMeta) revisitMeta.textContent = "Live · " + count;
+
+      // re-enable auto-scroll after rendering
+      setTimeout(function(){ enableAutoScroll("revisitWrap"); }, 300);
 
     }catch(e){
       revisitBody.innerHTML = '<tr><td colspan="4" class="muted">Error</td></tr>';
@@ -303,13 +299,106 @@ function loadRevisit(){
   });
 }
 
+/* Refresh button refreshes both */
+if (refreshBtn) refreshBtn.onclick = function(){
+  loadProgress();
+  loadRevisit();
+};
+
+/* Auto refresh data */
+setInterval(loadProgress, 30000);
 setInterval(loadRevisit, 30000);
+loadProgress();
 loadRevisit();
+
+/* =========================
+   AUTO-SCROLL TABLES (TV)
+========================= */
+function enableAutoScroll(wrapId){
+  var wrap = document.getElementById(wrapId);
+  if(!wrap) return;
+
+  var table = wrap.querySelector("table");
+  if(!table) return;
+
+  // Wrap the table once
+  var mover = wrap.querySelector(".auto-scroll");
+  if(!mover){
+    mover = document.createElement("div");
+    mover.className = "auto-scroll";
+    mover.appendChild(table);
+    wrap.appendChild(mover);
+  }
+
+  var y = 0;
+  var dir = 1;
+  var speed = 0.35;      // 0.2..0.8
+  var pauseTop = 2200;
+  var pauseBottom = 2200;
+
+  var paused = false;
+  var lastTick = Date.now();
+
+  function resetToTop(){
+    y = 0;
+    dir = 1;
+    mover.style.transform = "translateY(0px)";
+  }
+
+  function tick(){
+    var wrapH = wrap.clientHeight;
+    var moverH = mover.scrollHeight;
+
+    if(moverH <= wrapH + 2){
+      resetToTop();
+      requestAnimationFrame(tick);
+      return;
+    }
+
+    var now = Date.now();
+    var dt = now - lastTick;
+    lastTick = now;
+
+    if(paused){
+      requestAnimationFrame(tick);
+      return;
+    }
+
+    y += dir * speed * (dt / 16.6);
+
+    var maxY = moverH - wrapH;
+
+    if(y >= maxY){
+      y = maxY;
+      mover.style.transform = "translateY(" + (-y) + "px)";
+      paused = true;
+      setTimeout(function(){ dir = -1; paused = false; }, pauseBottom);
+    } else if(y <= 0){
+      y = 0;
+      mover.style.transform = "translateY(0px)";
+      paused = true;
+      setTimeout(function(){ dir = 1; paused = false; }, pauseTop);
+    } else {
+      mover.style.transform = "translateY(" + (-y) + "px)";
+    }
+
+    requestAnimationFrame(tick);
+  }
+
+  resetToTop();
+  requestAnimationFrame(tick);
+}
+
+/* Start auto-scroll */
+setTimeout(function(){
+  enableAutoScroll("progressWrap");
+  enableAutoScroll("revisitWrap");
+}, 700);
 
 /* =========================
    DATE/TIME + WEATHER
 ========================= */
-function tick(){
+function tickClock(){
   var d = new Date();
   function pad(n){ return n<10 ? "0"+n : ""+n; }
 
@@ -319,8 +408,8 @@ function tick(){
   if (timeEl) timeEl.textContent = pad(d.getHours())+":"+pad(d.getMinutes())+":"+pad(d.getSeconds());
   if (dateEl) dateEl.textContent = d.toDateString();
 }
-setInterval(tick, 1000);
-tick();
+setInterval(tickClock, 1000);
+tickClock();
 
 function loadWeather(){
   var url = "https://api.open-meteo.com/v1/forecast?latitude=30.0444&longitude=31.2357&current=temperature_2m";
