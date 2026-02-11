@@ -276,6 +276,71 @@ if (refreshBtn) refreshBtn.onclick = loadProgress;
 setInterval(loadProgress, 30000);
 loadProgress();
 
+/* =========================
+   REVISIT BOOKING TODAY
+   Columns: A,D,F,G
+========================= */
+
+var REVISIT_CSV =
+"https://docs.google.com/spreadsheets/d/e/2PACX-1vSKpulVdyocoyi3Vj-BHBG9aOcfsG-QkgLtwlLGjbWFy_YkTmiN5mOsiYfWS6_sqLNtS4hCie2c3JDH/pub?gid=1236474828&single=true&output=csv";
+
+var revisitBody = document.getElementById("revisitBody");
+
+function loadRevisit(){
+  if(!revisitBody) return;
+
+  revisitBody.innerHTML =
+    '<tr><td colspan="4" class="muted">Loading…</td></tr>';
+
+  xhr(REVISIT_CSV + "&t=" + Date.now(), function(err, res){
+    if(err){
+      revisitBody.innerHTML =
+        '<tr><td colspan="4" class="muted">Offline</td></tr>';
+      return;
+    }
+
+    try{
+      var rows = parseCSV(res).slice(1);
+      var html = "";
+      var count = 0;
+
+      for(var i=0;i<rows.length;i++){
+        var r = rows[i];
+
+        var status = (r[0] || "").trim(); // A
+        var name   = (r[3] || "").trim(); // D
+        var car    = (r[5] || "").trim(); // F
+        var color  = (r[6] || "").trim(); // G
+
+        if(!name) continue;
+        count++;
+
+        html += "<tr>";
+        html += "<td>" + esc(status) + "</td>";
+        html += "<td>" + esc(name) + "</td>";
+        html += "<td>" + esc(car) + "</td>";
+        html += "<td>" + esc(color) + "</td>";
+        html += "</tr>";
+      }
+
+      if(!html){
+        revisitBody.innerHTML =
+          '<tr><td colspan="4" class="muted">No bookings today</td></tr>';
+        return;
+      }
+
+      revisitBody.innerHTML = html;
+
+    }catch(e){
+      revisitBody.innerHTML =
+        '<tr><td colspan="4" class="muted">Error</td></tr>';
+    }
+  });
+}
+
+/* Auto refresh with IN PROGRESS */
+setInterval(loadRevisit, 30000);
+loadRevisit();
 
 /* =========================
    DATE/TIME + WEATHER
@@ -320,3 +385,4 @@ loadWeather();
 setInterval(loadWeather, 10*60*1000);
 
 })();
+
