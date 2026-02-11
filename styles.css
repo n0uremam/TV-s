@@ -135,12 +135,10 @@ body{
   object-fit:contain;
   background:#000;
   opacity:0;
-  transition:opacity 900ms ease; /* ✅ smooth fade */
+  transition:opacity 900ms ease;
 }
 
-.media-layer.is-active{
-  opacity:1;
-}
+.media-layer.is-active{ opacity:1; }
 
 /* Videos */
 .frame video{
@@ -151,6 +149,11 @@ body{
 }
 
 /* BOARD */
+.board{
+  display:flex;
+  flex-direction:column;
+}
+
 .board-head{
   display:flex;
   gap:14px;
@@ -159,7 +162,13 @@ body{
   align-items:flex-start;
 }
 
+.board-head.tiny{
+  padding:10px 14px;
+  border-bottom:1px solid rgba(255,255,255,.06);
+}
+
 .board-title{font-weight:900}
+.small-title{font-size:14px;letter-spacing:.4px}
 
 .board-sub{
   margin-left:auto;
@@ -176,11 +185,24 @@ body{
   cursor:pointer;
 }
 
+/* DIVIDER */
+.section-divider{
+  height:10px;
+  background:linear-gradient(to bottom, rgba(255,255,255,.03), rgba(0,0,0,0));
+}
+
 /* TABLE */
 .table-wrap{
-  height:calc(100% - 60px);
   overflow:auto;
 }
+
+.table-wrap.compact{
+  /* split right panel between two tables */
+  max-height:42%;
+}
+
+#progressWrap{ max-height:48%; }
+#revisitWrap{ max-height:42%; }
 
 .table{
   width:100%;
@@ -208,29 +230,9 @@ body{
   font-weight:700;
 }
 
-/* REVISIT BOOKING */
-.revisit-section{
-  margin-top:14px;
-  border-top:1px solid rgba(255,255,255,.06);
-  padding-top:10px;
-}
-
-.board-head.small{
-  padding:6px 0 10px;
-}
-
-.table-wrap.compact{
-  max-height:260px; /* keeps TV layout clean */
-}
-
-.table-wrap.compact th,
-.table-wrap.compact td{
-  padding:10px;
-  font-size:12px;
-}
-
-.table-wrap.compact td:nth-child(2),
-.table-wrap.compact td:nth-child(3),
-.table-wrap.compact td:nth-child(4){
+/* Arabic columns in Revisit */
+#revisitWrap td:nth-child(2),
+#revisitWrap td:nth-child(3),
+#revisitWrap td:nth-child(4){
   direction:rtl;
 }
