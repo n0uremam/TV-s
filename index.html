@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>ABDO EL AMIR — Waiting Room</title>
 
-  <!-- Auto refresh every 5 hours -->
-  <meta http-equiv="refresh" content="18000">
+  <!-- Auto refresh every 1 hour -->
+  <meta http-equiv="refresh" content="3600">
 
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;600;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css" />
@@ -41,7 +41,7 @@
 
 <main class="layout">
 
-  <!-- LEFT -->
+  <!-- LEFT: media -->
   <section class="stage">
     <div class="banner">
       <img src="media/banner.jpg" alt="Banner">
@@ -54,23 +54,22 @@
       </div>
     </div>
 
-    <!-- MEDIA -->
     <div id="mediaFrame" class="frame">
       <div class="center muted">Loading media…</div>
     </div>
-
-    <div class="media-status" id="mediaStatus">—</div>
   </section>
 
-  <!-- RIGHT -->
+  <!-- RIGHT: tables -->
   <aside class="board">
+
+    <!-- IN PROGRESS -->
     <div class="board-head">
       <div class="board-title">IN PROGRESS</div>
       <div class="board-sub" id="boardMeta">Live</div>
       <button id="refreshBtn" class="btn">Refresh</button>
     </div>
 
-    <div class="table-wrap">
+    <div class="table-wrap compact" id="progressWrap">
       <table class="table">
         <thead>
           <tr>
@@ -86,36 +85,35 @@
         </tbody>
       </table>
     </div>
-  </aside>
-<!-- REVISIT BOOKING TODAY -->
-<div class="revisit-section">
-  <div class="board-head small">
-    <div class="board-title">REVISIT BOOKING TODAY</div>
-  </div>
 
-  <div class="table-wrap compact">
-    <table class="table">
-      <thead>
-        <tr>
-          <th>STATUS</th>
-          <th>NAME</th>
-          <th>نوع السياره</th>
-          <th>لون السياره</th>
-        </tr>
-      </thead>
-      <tbody id="revisitBody">
-        <tr>
-          <td colspan="4" class="muted">Loading…</td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
-</div>
+    <!-- REVISIT BOOKING TODAY (NOW UNDER IN PROGRESS) -->
+    <div class="section-divider"></div>
+
+    <div class="board-head tiny">
+      <div class="board-title small-title">REVISIT BOOKING TODAY</div>
+      <div class="board-sub" id="revisitMeta">—</div>
+    </div>
+
+    <div class="table-wrap compact" id="revisitWrap">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>STATUS</th>
+            <th>NAME</th>
+            <th>نوع السياره</th>
+            <th>لون السياره</th>
+          </tr>
+        </thead>
+        <tbody id="revisitBody">
+          <tr><td colspan="4" class="muted">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+  </aside>
 
 </main>
 
 <script src="script.js"></script>
 </body>
 </html>
-
-
