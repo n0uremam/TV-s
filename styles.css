@@ -34,7 +34,7 @@ body{
   gap:12px;
 }
 
-.logo{width:46px}
+.logo{width:46px;height:auto;}
 
 .name{
   font-weight:900;
@@ -47,26 +47,15 @@ body{
 }
 
 /* HUD */
-.hud{
-  display:flex;
-  gap:12px;
-}
-
+.hud{display:flex;gap:12px;}
 .hud-item{
   background:rgba(255,255,255,.07);
   padding:10px 12px;
   border-radius:12px;
+  min-width:82px;
 }
-
-.hud-k{
-  font-size:11px;
-  color:#ccc;
-}
-
-.hud-v{
-  font-weight:800;
-  margin-top:3px;
-}
+.hud-k{font-size:11px;color:#ccc;}
+.hud-v{font-weight:800;margin-top:3px;}
 
 /* LAYOUT */
 .layout{
@@ -89,26 +78,22 @@ body{
   position:relative;
   overflow:hidden;
 }
-
 .banner img{
   width:100%;
   height:100%;
   object-fit:cover;
   filter:brightness(.55);
 }
-
 .banner-overlay{
   position:absolute;
   inset:0;
   background:linear-gradient(to right,rgba(0,0,0,.8),transparent);
 }
-
 .banner-text{
   position:absolute;
   left:18px;
   bottom:14px;
 }
-
 .banner-title{font-weight:900}
 .banner-sub{font-size:12px;color:#ddd}
 
@@ -126,32 +111,29 @@ body{
 .center{color:#888}
 .muted{color:#888}
 
-/* Image cross-fade layers */
+/* Images crossfade */
 .media-layer{
   position:absolute;
   inset:0;
   width:100%;
   height:100%;
-  object-fit:contain;     /* images fit */
+  object-fit:contain;
   background:#000;
   opacity:0;
   transition:opacity 900ms ease;
 }
-.media-layer.is-active{ opacity:1; }
+.media-layer.is-active{opacity:1;}
 
-/* Videos fill */
+/* Videos (contain avoids black crop) */
 .frame video{
   width:100%;
   height:100%;
-  object-fit:cover;
+  object-fit:contain;
   background:#000;
 }
 
 /* BOARD */
-.board{
-  display:flex;
-  flex-direction:column;
-}
+.board{display:flex;flex-direction:column;}
 
 .board-head{
   display:flex;
@@ -160,20 +142,14 @@ body{
   border-bottom:1px solid rgba(255,255,255,.06);
   align-items:flex-start;
 }
-
 .board-head.tiny{
   padding:10px 14px;
   border-bottom:1px solid rgba(255,255,255,.06);
 }
 
-.board-title{font-weight:900}
-.small-title{font-size:14px;letter-spacing:.4px}
-
-.board-sub{
-  margin-left:auto;
-  font-size:12px;
-  color:#ccc;
-}
+.board-title{font-weight:900;}
+.small-title{font-size:14px;letter-spacing:.4px;}
+.board-sub{margin-left:auto;font-size:12px;color:#ccc;}
 
 .btn{
   background:rgba(255,255,255,.08);
@@ -184,55 +160,44 @@ body{
   cursor:pointer;
 }
 
-/* DIVIDER */
 .section-divider{
   height:10px;
   background:linear-gradient(to bottom, rgba(255,255,255,.03), rgba(0,0,0,0));
 }
 
-/* TABLE BASE */
+/* TABLE */
 .table{
   width:100%;
   border-collapse:collapse;
   font-size:13px;
 }
-
 .table th,
 .table td{
   padding:12px;
   border-bottom:1px solid rgba(255,255,255,.08);
   text-align:center;
 }
-
 .table th{
   color:#ccc;
   background:rgba(0,0,0,.6);
   position:sticky;
   top:0;
 }
-
 .table td:first-child{
   direction:rtl;
-  text-align:center;
   font-weight:700;
 }
 
-/* Right panel table sizing (split panel into two) */
-#progressWrap{ max-height:48%; }
-#revisitWrap{  max-height:42%; }
+/* Wrappers */
+#progressWrap{max-height:48%;}
+#revisitWrap{max-height:42%;}
 
-/* Disable manual scrollbars (TV clean) */
 .table-wrap{
-  overflow:hidden;         /* no manual scroll */
+  overflow:hidden;
   position:relative;
 }
+.table-wrap .auto-scroll{will-change:transform;}
 
-/* Scrolling inner container */
-.table-wrap .auto-scroll{
-  will-change: transform;
-}
-
-/* Soft fades */
 .table-wrap::after{
   content:"";
   position:absolute;
@@ -250,7 +215,6 @@ body{
   pointer-events:none;
 }
 
-/* Arabic columns in Revisit */
 #revisitWrap td:nth-child(2),
 #revisitWrap td:nth-child(3),
 #revisitWrap td:nth-child(4){
