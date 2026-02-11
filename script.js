@@ -3,7 +3,7 @@
 /* =========================
    AUTO REFRESH: 1 HOUR
 ========================= */
-setTimeout(function(){ location.reload(); }, 3600 * 1000);
+setTimeout(function(){ location.reload(); }, 10 * 60 * 1000);
 
 /* =========================
    SHARED: XHR + CSV
@@ -429,3 +429,4 @@ loadWeather();
 setInterval(loadWeather, 10*60*1000);
 
 })();
+
