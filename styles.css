@@ -207,3 +207,30 @@ body{
   text-align:center;
   font-weight:700;
 }
+
+/* REVISIT BOOKING */
+.revisit-section{
+  margin-top:14px;
+  border-top:1px solid rgba(255,255,255,.06);
+  padding-top:10px;
+}
+
+.board-head.small{
+  padding:6px 0 10px;
+}
+
+.table-wrap.compact{
+  max-height:260px; /* keeps TV layout clean */
+}
+
+.table-wrap.compact th,
+.table-wrap.compact td{
+  padding:10px;
+  font-size:12px;
+}
+
+.table-wrap.compact td:nth-child(2),
+.table-wrap.compact td:nth-child(3),
+.table-wrap.compact td:nth-child(4){
+  direction:rtl;
+}
