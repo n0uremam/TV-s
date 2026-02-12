@@ -74,30 +74,36 @@ loadWeather();
 setInterval(loadWeather, 10*60*1000);
 
 /* =========================
-   MEDIA PLAYER — TV HARDENED
-   - Fallback banner ALWAYS exists, never goes away.
-   - Video is removed on any fail.
-   - If repeated failures, reload.
+   MEDIA PLAYER — FIX IMAGE HANG
+   - Banner stays as base layer
+   - Separate overlay IMG for slideshow images
+   - Image timeout if neither onload nor onerror fires
 ========================= */
 var MEDIA_PATH = "media/shared/";
 var MANIFEST_URL = MEDIA_PATH + "manifest.json";
 var frame = document.getElementById("mediaFrame");
 var statusEl = document.getElementById("mediaStatus");
-var fallback = document.getElementById("mediaFallbackBanner");
+var bannerBase = document.getElementById("mediaFallbackBanner");
 
 var playlist = [];
 var idx = 0;
 
-var nextTimer=null;
-var failCount = 0;          // consecutive failures
-var globalFreezeTimer=null;
+var nextTimer = null;
+var failCount = 0;
+
+var IMAGE_HANG_TIMEOUT_MS = 10000; // ✅ if image hangs, skip after 10s
+var VIDEO_FIRSTFRAME_TIMEOUT_MS = 20000;
+var VIDEO_STALL_MS = 25000;
 
 function setStatus(t){
-  if (statusEl) statusEl.textContent = t;
+  if (statusEl) statusEl.textContent = t || "";
 }
-
 function clearNext(){
   if (nextTimer){ clearTimeout(nextTimer); nextTimer=null; }
+}
+function scheduleNext(ms){
+  clearNext();
+  nextTimer = setTimeout(playNext, ms);
 }
 
 function removeVideo(){
@@ -110,81 +116,108 @@ function removeVideo(){
   }
 }
 
-function showFallback(msg){
-  // IMPORTANT: fallback is ALWAYS the base layer
-  if (fallback){
-    fallback.style.display = "block";
-    // keep it visible; do NOT hide here
-  }
-  removeVideo();
-  setStatus(msg || "");
+function ensureOverlayImage(){
+  var img = document.getElementById("mediaOverlayImage");
+  if (img) return img;
+
+  img = document.createElement("img");
+  img.id = "mediaOverlayImage";
+  img.alt = "media";
+  img.style.position = "absolute";
+  img.style.inset = "0";
+  img.style.width = "100%";
+  img.style.height = "100%";
+  img.style.objectFit = "contain";   // images shrink-to-fit
+  img.style.background = "#000";
+  img.style.opacity = "0";
+  img.style.transition = "opacity 600ms ease";
+  img.style.display = "block";
+  frame.appendChild(img);
+  return img;
 }
 
-function scheduleNext(ms){
-  clearNext();
-  nextTimer = setTimeout(playNext, ms);
+function showBannerBase(){
+  if (bannerBase){
+    bannerBase.style.display = "block";
+    bannerBase.style.opacity = "1";
+  }
 }
 
 function hardResetIfNeeded(){
-  // if the TV keeps failing videos/images, it needs a refresh
   if (failCount >= 4){
     setStatus("System recovering…");
     setTimeout(function(){ location.reload(); }, 1500);
   }
 }
 
-/* ---------- IMAGE ---------- */
+/* ----- IMAGE ----- */
 function playImage(src, seconds){
-  showFallback("Loading image…");
+  removeVideo();
+  showBannerBase();
+
+  var overlay = ensureOverlayImage();
+  overlay.style.opacity = "0";
+  overlay.src = ""; // clear
+
   var dur = (seconds || 15) * 1000;
   if (dur < 3000) dur = 3000;
 
-  var tried = 0;
+  setStatus("Loading image…");
 
-  function loadOnce(){
-    tried++;
-    if (!fallback){
-      // if no fallback element exists, just skip
-      failCount++;
-      hardResetIfNeeded();
-      scheduleNext(1200);
-      return;
-    }
+  var done = false;
+  var hangTimer = setTimeout(function(){
+    if (done) return;
+    done = true;
+    failCount++;
+    setStatus("Image timeout, skipping…");
+    overlay.style.opacity = "0";
+    hardResetIfNeeded();
+    scheduleNext(1200);
+  }, IMAGE_HANG_TIMEOUT_MS);
 
-    fallback.onload = function(){
-      // image is on screen now
-      failCount = 0;
-      setStatus("");
-      scheduleNext(dur);
-    };
+  overlay.onload = function(){
+    if (done) return;
+    done = true;
+    clearTimeout(hangTimer);
 
-    fallback.onerror = function(){
-      if (tried < 2){
-        // retry once
-        setStatus("Retry image…");
-        setTimeout(loadOnce, 600);
-        return;
-      }
-      failCount++;
-      showFallback("Image failed: " + src);
-      hardResetIfNeeded();
-      scheduleNext(1500);
-    };
+    failCount = 0;
+    setStatus("");
+    // Show image above banner
+    overlay.style.opacity = "1";
 
-    // always cache-bust on TVs
-    fallback.src = MEDIA_PATH + src + "?t=" + Date.now();
-  }
+    // move next after duration
+    scheduleNext(dur);
+  };
 
-  loadOnce();
+  overlay.onerror = function(){
+    if (done) return;
+    done = true;
+    clearTimeout(hangTimer);
+
+    failCount++;
+    setStatus("Image failed, skipping…");
+    overlay.style.opacity = "0";
+    hardResetIfNeeded();
+    scheduleNext(1200);
+  };
+
+  // cache-bust for TVs
+  overlay.src = MEDIA_PATH + src + "?t=" + Date.now();
 }
 
-/* ---------- VIDEO ---------- */
+/* ----- VIDEO ----- */
 function playVideo(src){
-  // Start with fallback visible while the video starts
-  showFallback("Loading video…");
+  // Keep banner visible until video shows frames
+  showBannerBase();
+
+  var overlay = ensureOverlayImage();
+  overlay.style.opacity = "0"; // hide image overlay during video
+
+  removeVideo();
+  setStatus("Loading video…");
 
   var v = document.createElement("video");
-  v.src = MEDIA_PATH + src + "?t=" + Date.now(); // cache-bust to reduce stuck buffers
+  v.src = MEDIA_PATH + src + "?t=" + Date.now();
   v.autoplay = true;
   v.muted = true;
   v.playsInline = true;
@@ -192,12 +225,11 @@ function playVideo(src){
   v.setAttribute("webkit-playsinline","true");
   v.setAttribute("playsinline","true");
 
-  // keep video on top, fallback underneath
   v.style.position = "absolute";
   v.style.inset = "0";
   v.style.width = "100%";
   v.style.height = "100%";
-  v.style.objectFit = "cover";
+  v.style.objectFit = "cover";  // videos fill (no shrink)
   v.style.background = "#000";
 
   frame.appendChild(v);
@@ -206,96 +238,87 @@ function playVideo(src){
   var lastTime = -1;
   var stallStart = Date.now();
 
-  // If no first frame within 20s -> fail
-  var firstFrameTimeout = setTimeout(function(){
+  var firstFrameTimer = setTimeout(function(){
     if (!startedFrames){
       failCount++;
-      showFallback("Video can't start: " + src);
+      setStatus("Video can't start, skipping…");
+      removeVideo();
       hardResetIfNeeded();
-      scheduleNext(2000);
+      scheduleNext(1500);
     }
-  }, 20000);
+  }, VIDEO_FIRSTFRAME_TIMEOUT_MS);
 
-  function cleanupAndNext(waitMs){
-    clearTimeout(firstFrameTimeout);
+  function markProgress(){
+    stallStart = Date.now();
+  }
+
+  function failVideo(msg){
+    clearTimeout(firstFrameTimer);
+    failCount++;
+    setStatus(msg || "Video error, skipping…");
     removeVideo();
-    // fallback remains visible
-    scheduleNext(waitMs || 500);
+    showBannerBase();
+    hardResetIfNeeded();
+    scheduleNext(1500);
   }
 
   v.onplaying = function(){
     setStatus("Playing…");
+    markProgress();
   };
 
   v.ontimeupdate = function(){
-    // This is the strongest signal that frames are rendering
     if (v.currentTime !== lastTime){
       lastTime = v.currentTime;
       startedFrames = true;
-      stallStart = Date.now();
-      // Now hide fallback because video is truly rendering
-      if (fallback) fallback.style.display = "none";
-      setStatus("");
       failCount = 0;
+      setStatus("");
+      // Only now hide banner (video is truly rendering)
+      if (bannerBase) bannerBase.style.display = "none";
+      markProgress();
     }
-
-    // Stall detection: if time stops moving for 25s, treat as freeze
-    if (Date.now() - stallStart > 25000){
-      failCount++;
-      showFallback("Video froze: " + src);
-      hardResetIfNeeded();
-      cleanupAndNext(2200);
+    // stall protection
+    if (Date.now() - stallStart > VIDEO_STALL_MS){
+      failVideo("Video froze, skipping…");
     }
   };
 
   v.onwaiting = function(){
-    // keep fallback visible during waiting
-    if (fallback) fallback.style.display = "block";
+    showBannerBase();
     setStatus("Buffering…");
   };
 
   v.onstalled = function(){
-    if (fallback) fallback.style.display = "block";
+    showBannerBase();
     setStatus("Stalled…");
   };
 
-  v.onerror = function(){
-    failCount++;
-    showFallback("Video error: " + src);
-    hardResetIfNeeded();
-    cleanupAndNext(2200);
-  };
+  v.onerror = function(){ failVideo("Video error, skipping…"); };
 
   v.onended = function(){
-    // On end, show fallback immediately (prevents black flash)
-    if (fallback) fallback.style.display = "block";
-    cleanupAndNext(600);
+    clearTimeout(firstFrameTimer);
+    showBannerBase(); // prevent black flash
+    removeVideo();
+    scheduleNext(500);
   };
 
   try{
     var p = v.play();
     if (p && p.catch){
-      p.catch(function(){
-        failCount++;
-        showFallback("Autoplay blocked: " + src);
-        hardResetIfNeeded();
-        cleanupAndNext(2200);
-      });
+      p.catch(function(){ failVideo("Autoplay blocked, skipping…"); });
     }
   }catch(e){
-    failCount++;
-    showFallback("Play failed: " + src);
-    hardResetIfNeeded();
-    cleanupAndNext(2200);
+    failVideo("Play failed, skipping…");
   }
 }
 
-/* ---------- PLAYLIST ---------- */
+/* ----- PLAYLIST ----- */
 function playNext(){
   clearNext();
 
   if (!playlist.length){
-    showFallback("No media in manifest");
+    showBannerBase();
+    setStatus("No media in manifest");
     return;
   }
 
@@ -307,8 +330,8 @@ function playNext(){
     return;
   }
 
-  // Always ensure fallback visible at transitions
-  if (fallback) fallback.style.display = "block";
+  // Always show banner during transitions
+  showBannerBase();
   removeVideo();
 
   if (item.type === "image") return playImage(item.src, item.duration || 15);
@@ -318,10 +341,12 @@ function playNext(){
 }
 
 function loadManifest(){
-  showFallback("Loading media…");
+  showBannerBase();
+  setStatus("Loading media…");
+
   xhr(MANIFEST_URL + "?t=" + Date.now(), function(err, res){
     if (err){
-      showFallback("Manifest offline");
+      setStatus("Manifest offline");
       scheduleNext(5000);
       return;
     }
@@ -329,36 +354,22 @@ function loadManifest(){
       var json = JSON.parse(res);
       playlist = (json && json.items) ? json.items : [];
       if (!playlist.length){
-        showFallback("No media found");
+        setStatus("No media found");
         return;
       }
       idx = 0;
       failCount = 0;
       playNext();
     }catch(e){
-      showFallback("Manifest JSON error");
+      setStatus("Manifest JSON error");
     }
   });
 }
 
-// Global freeze safety: if the browser gets “stuck”, reload
-clearInterval(globalFreezeTimer);
-globalFreezeTimer = setInterval(function(){
-  // if video exists but not progressing and fallback hidden -> force fallback
-  var v = frame ? frame.querySelector("video") : null;
-  if (v && fallback && fallback.style.display === "none"){
-    // if currentTime not changing -> show fallback again
-    // (very cheap safety)
-    if (v.paused || v.readyState < 2){
-      fallback.style.display = "block";
-    }
-  }
-}, 5000);
-
 loadManifest();
 
 /* =========================
-   TABLES (unchanged)
+   TABLES (same as before)
 ========================= */
 var CSV_PROGRESS =
 "https://docs.google.com/spreadsheets/d/e/2PACX-1vSKpulVdyocoyi3Vj-BHBG9aOcfsG-QkgLtwlLGjbWFy_YkTmiN5mOsiYfWS6_sqLNtS4hCie2c3JDH/pub?gid=2111665249&single=true&output=csv";
