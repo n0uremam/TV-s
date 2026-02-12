@@ -1,6 +1,333 @@
+(function(){
+
+/* ====== DEBUG ON SCREEN ====== */
+var debugBox = document.getElementById("debugBox");
+function debug(msg){
+  if (!debugBox) return;
+  debugBox.textContent = msg;
+}
+window.onerror = function(message, source, lineno, colno){
+  debug("JS ERROR: " + message + " @ " + lineno + ":" + colno);
+  return false;
+};
+debug("JS loaded ✓");
+
 /* =========================
-   TABLES — TV SAFE (NO SCROLL)
-   We paginate rows instead of scrolling.
+   AUTO REFRESH: 6 HOURS
+========================= */
+setTimeout(function(){ location.reload(); }, 6 * 60 * 60 * 1000);
+
+/* =========================
+   XHR helpers
+========================= */
+function xhr(url, cb){
+  var r = new XMLHttpRequest();
+  r.open("GET", url, true);
+  r.timeout = 25000;
+  r.onload = function(){
+    if (r.status >= 200 && r.status < 300) cb(null, r.responseText);
+    else cb("HTTP " + r.status);
+  };
+  r.onerror = r.ontimeout = function(){ cb("NETWORK/TIMEOUT"); };
+  r.send();
+}
+
+function esc(s){
+  s = (s === undefined || s === null) ? "" : String(s);
+  return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+
+function parseCSV(t){
+  var rows=[], row=[];
+  var cur="", q=false;
+  for (var i=0;i<t.length;i++){
+    var c=t[i], n=t[i+1];
+    if (c=='"' && q && n=='"'){ cur+='"'; i++; }
+    else if (c=='"'){ q=!q; }
+    else if (c=="," && !q){ row.push(cur); cur=""; }
+    else if ((c=="\n"||c=="\r") && !q){
+      if (cur || row.length){ row.push(cur); rows.push(row.slice()); }
+      row.length=0; cur="";
+    } else cur += c;
+  }
+  if (cur || row.length){ row.push(cur); rows.push(row); }
+  return rows;
+}
+
+/* =========================
+   DATE/TIME + WEATHER (Cairo)
+========================= */
+function tickClock(){
+  var d = new Date();
+  function pad(n){ return n<10 ? "0"+n : ""+n; }
+  var timeEl = document.getElementById("timeLocal");
+  var dateEl = document.getElementById("dateLocal");
+  if (timeEl) timeEl.textContent = pad(d.getHours())+":"+pad(d.getMinutes())+":"+pad(d.getSeconds());
+  if (dateEl) dateEl.textContent = d.toDateString();
+}
+setInterval(tickClock, 1000);
+tickClock();
+
+function loadWeather(){
+  var el = document.getElementById("weatherCairo");
+  if (!el) return;
+
+  var url = "https://api.open-meteo.com/v1/forecast?latitude=30.0444&longitude=31.2357&current=temperature_2m";
+  xhr(url + "&t=" + Date.now(), function(err, res){
+    if (err){ el.textContent="--"; debug("Weather: " + err); return; }
+    try{
+      var j = JSON.parse(res);
+      el.textContent = Math.round(j.current.temperature_2m) + "°C";
+      debug("Weather OK");
+    }catch(e){
+      el.textContent="--";
+      debug("Weather JSON error");
+    }
+  });
+}
+loadWeather();
+setInterval(loadWeather, 10*60*1000);
+
+/* =========================
+   MEDIA PLAYER (stable)
+========================= */
+var MEDIA_PATH = "media/shared/";
+var MANIFEST_URL = MEDIA_PATH + "manifest.json";
+
+var frame = document.getElementById("mediaFrame");
+var statusEl = document.getElementById("mediaStatus");
+var bannerBase = document.getElementById("mediaFallbackBanner");
+
+var playlist = [];
+var idx = 0;
+var nextTimer = null;
+
+function setMediaStatus(t){
+  if (statusEl) statusEl.textContent = t || "";
+}
+function clearNext(){
+  if (nextTimer){ clearTimeout(nextTimer); nextTimer=null; }
+}
+function scheduleNext(ms){
+  clearNext();
+  nextTimer = setTimeout(playNext, ms);
+}
+
+function removeVideo(){
+  if (!frame) return;
+  var v = frame.getElementsByTagName("video");
+  if (v && v[0]){
+    try{ v[0].pause(); }catch(_){}
+    try{ v[0].removeAttribute("src"); }catch(_){}
+    try{ v[0].load(); }catch(_){}
+    if (v[0].parentNode) v[0].parentNode.removeChild(v[0]);
+  }
+}
+
+function ensureOverlayImage(){
+  var img = document.getElementById("mediaOverlayImage");
+  if (img) return img;
+  img = document.createElement("img");
+  img.id = "mediaOverlayImage";
+  img.style.position = "absolute";
+  img.style.left = "0";
+  img.style.top = "0";
+  img.style.right = "0";
+  img.style.bottom = "0";
+  img.style.width = "100%";
+  img.style.height = "100%";
+  img.style.objectFit = "contain";
+  img.style.background = "#000";
+  img.style.opacity = "0";
+  img.style.transition = "opacity 600ms ease";
+  frame.appendChild(img);
+  return img;
+}
+
+function showBanner(){
+  if (bannerBase) bannerBase.style.display = "block";
+}
+
+function playImage(src, durationSec){
+  removeVideo();
+  showBanner();
+  var overlay = ensureOverlayImage();
+  overlay.style.opacity = "0";
+  overlay.src = "";
+
+  var dur = (durationSec || 15) * 1000;
+  if (dur < 3000) dur = 3000;
+
+  setMediaStatus("Loading image…");
+  debug("IMG: " + src);
+
+  var done = false;
+  var hang = setTimeout(function(){
+    if (done) return;
+    done = true;
+    setMediaStatus("Image timeout, skipping…");
+    overlay.style.opacity = "0";
+    scheduleNext(900);
+  }, 10000);
+
+  overlay.onload = function(){
+    if (done) return;
+    done = true;
+    clearTimeout(hang);
+    setMediaStatus("");
+    overlay.style.opacity = "1";
+    scheduleNext(dur);
+  };
+
+  overlay.onerror = function(){
+    if (done) return;
+    done = true;
+    clearTimeout(hang);
+    setMediaStatus("Image failed, skipping…");
+    overlay.style.opacity = "0";
+    scheduleNext(900);
+  };
+
+  overlay.src = MEDIA_PATH + src + "?t=" + Date.now();
+}
+
+function playVideo(src){
+  showBanner();
+  var overlay = ensureOverlayImage();
+  overlay.style.opacity = "0";
+  removeVideo();
+
+  setMediaStatus("Loading video…");
+  debug("VID: " + src);
+
+  var v = document.createElement("video");
+  v.src = MEDIA_PATH + src + "?t=" + Date.now();
+  v.autoplay = true;
+  v.muted = true;
+  v.playsInline = true;
+  v.preload = "auto";
+  v.setAttribute("webkit-playsinline","true");
+  v.setAttribute("playsinline","true");
+
+  v.style.position = "absolute";
+  v.style.left = "0";
+  v.style.top = "0";
+  v.style.right = "0";
+  v.style.bottom = "0";
+  v.style.width = "100%";
+  v.style.height = "100%";
+  v.style.objectFit = "cover";
+  v.style.background = "#000";
+
+  frame.appendChild(v);
+
+  var started = false;
+  var lastT = -1;
+  var stallAt = Date.now();
+
+  var firstFrameTimer = setTimeout(function(){
+    if (!started){
+      setMediaStatus("Video can't start, skipping…");
+      removeVideo();
+      showBanner();
+      scheduleNext(1200);
+    }
+  }, 20000);
+
+  function failVideo(msg){
+    clearTimeout(firstFrameTimer);
+    setMediaStatus(msg || "Video error, skipping…");
+    removeVideo();
+    showBanner();
+    scheduleNext(1200);
+  }
+
+  v.ontimeupdate = function(){
+    if (v.currentTime !== lastT){
+      lastT = v.currentTime;
+      started = true;
+      stallAt = Date.now();
+      setMediaStatus("");
+      if (bannerBase) bannerBase.style.display = "none";
+    }
+    if (Date.now() - stallAt > 25000){
+      failVideo("Video froze, skipping…");
+    }
+  };
+
+  v.onended = function(){
+    clearTimeout(firstFrameTimer);
+    showBanner();
+    removeVideo();
+    scheduleNext(600);
+  };
+
+  v.onerror = function(){ failVideo("Video error, skipping…"); };
+  v.onwaiting = function(){ showBanner(); setMediaStatus("Buffering…"); };
+
+  try{
+    var p = v.play();
+    if (p && p.catch){ p.catch(function(){ failVideo("Autoplay blocked"); }); }
+  }catch(e){
+    failVideo("Play failed");
+  }
+}
+
+function playNext(){
+  clearNext();
+
+  if (!playlist.length){
+    showBanner();
+    setMediaStatus("No media found (manifest empty)");
+    debug("Manifest items: 0");
+    return;
+  }
+
+  var item = playlist[idx];
+  idx = (idx + 1) % playlist.length;
+
+  if (!item || !item.type || !item.src){
+    scheduleNext(600);
+    return;
+  }
+
+  showBanner();
+  removeVideo();
+
+  if (item.type === "image") return playImage(item.src, item.duration || 15);
+  if (item.type === "video") return playVideo(item.src);
+
+  scheduleNext(600);
+}
+
+function loadManifest(){
+  showBanner();
+  setMediaStatus("Loading media…");
+  debug("Loading manifest…");
+
+  xhr(MANIFEST_URL + "?t=" + Date.now(), function(err, res){
+    if (err){
+      setMediaStatus("Manifest offline (" + err + ")");
+      debug("Manifest error: " + err);
+      scheduleNext(5000);
+      return;
+    }
+    try{
+      var j = JSON.parse(res);
+      playlist = (j && j.items) ? j.items : [];
+      idx = 0;
+      debug("Manifest OK, items: " + playlist.length);
+      playNext();
+    }catch(e){
+      setMediaStatus("Manifest JSON error");
+      debug("Manifest JSON error");
+    }
+  });
+}
+loadManifest();
+
+/* =========================
+   TABLES — TV SAFE pagination
 ========================= */
 var CSV_PROGRESS =
 "https://docs.google.com/spreadsheets/d/e/2PACX-1vSKpulVdyocoyi3Vj-BHBG9aOcfsG-QkgLtwlLGjbWFy_YkTmiN5mOsiYfWS6_sqLNtS4hCie2c3JDH/pub?gid=2111665249&single=true&output=csv";
@@ -13,39 +340,35 @@ var revisitBody  = document.getElementById("revisitBody");
 var boardMeta    = document.getElementById("boardMeta");
 var revisitMeta  = document.getElementById("revisitMeta");
 
-var progressData = []; // array of {customer, model, year, chassis, film}
-var revisitData  = []; // array of {status, name, car, color}
-
+var progressData = [];
+var revisitData  = [];
 var progressPage = 0;
 var revisitPage  = 0;
 
-var progressPagerTimer = null;
-var revisitPagerTimer  = null;
-
-/* Tune these for TV */
 var PROGRESS_ROWS_PER_PAGE = 10;
 var REVISIT_ROWS_PER_PAGE  = 8;
-var PAGE_SWITCH_MS         = 4000; // switch page every 4 seconds
+var PAGE_SWITCH_MS = 4000;
 
-function clearPagerTimers(){
-  if (progressPagerTimer) { clearInterval(progressPagerTimer); progressPagerTimer = null; }
-  if (revisitPagerTimer)  { clearInterval(revisitPagerTimer);  revisitPagerTimer  = null; }
+var progressTimer = null;
+var revisitTimer  = null;
+
+function stopPaging(){
+  if (progressTimer){ clearInterval(progressTimer); progressTimer=null; }
+  if (revisitTimer){ clearInterval(revisitTimer); revisitTimer=null; }
 }
 
-function renderProgressPage(){
+function renderProgress(){
   if (!progressBody) return;
-
   if (!progressData.length){
     progressBody.innerHTML = '<tr><td colspan="5" class="muted">No cars in progress</td></tr>';
     if (boardMeta) boardMeta.textContent = "Live · 0";
     return;
   }
-
-  var totalPages = Math.ceil(progressData.length / PROGRESS_ROWS_PER_PAGE);
-  if (progressPage >= totalPages) progressPage = 0;
+  var pages = Math.ceil(progressData.length / PROGRESS_ROWS_PER_PAGE);
+  if (progressPage >= pages) progressPage = 0;
 
   var start = progressPage * PROGRESS_ROWS_PER_PAGE;
-  var end   = start + PROGRESS_ROWS_PER_PAGE;
+  var end = start + PROGRESS_ROWS_PER_PAGE;
   var slice = progressData.slice(start, end);
 
   var html = "";
@@ -59,29 +382,23 @@ function renderProgressPage(){
       + "<td>"+esc(r.film)+"</td>"
       + "</tr>";
   }
-
   progressBody.innerHTML = html;
-
-  // show page counter for staff clarity
-  if (boardMeta) boardMeta.textContent = "Live · " + progressData.length + " · Page " + (progressPage+1) + "/" + totalPages;
-
+  if (boardMeta) boardMeta.textContent = "Live · " + progressData.length + " · Page " + (progressPage+1) + "/" + pages;
   progressPage++;
 }
 
-function renderRevisitPage(){
+function renderRevisit(){
   if (!revisitBody) return;
-
   if (!revisitData.length){
     revisitBody.innerHTML = '<tr><td colspan="4" class="muted">No bookings today</td></tr>';
     if (revisitMeta) revisitMeta.textContent = "Live · 0";
     return;
   }
-
-  var totalPages = Math.ceil(revisitData.length / REVISIT_ROWS_PER_PAGE);
-  if (revisitPage >= totalPages) revisitPage = 0;
+  var pages = Math.ceil(revisitData.length / REVISIT_ROWS_PER_PAGE);
+  if (revisitPage >= pages) revisitPage = 0;
 
   var start = revisitPage * REVISIT_ROWS_PER_PAGE;
-  var end   = start + REVISIT_ROWS_PER_PAGE;
+  var end = start + REVISIT_ROWS_PER_PAGE;
   var slice = revisitData.slice(start, end);
 
   var html = "";
@@ -94,40 +411,35 @@ function renderRevisitPage(){
       + "<td>"+esc(r.color)+"</td>"
       + "</tr>";
   }
-
   revisitBody.innerHTML = html;
-
-  if (revisitMeta) revisitMeta.textContent = "Live · " + revisitData.length + " · Page " + (revisitPage+1) + "/" + totalPages;
-
+  if (revisitMeta) revisitMeta.textContent = "Live · " + revisitData.length + " · Page " + (revisitPage+1) + "/" + pages;
   revisitPage++;
 }
 
-function startPagers(){
-  clearPagerTimers();
-  // render immediately
-  renderProgressPage();
-  renderRevisitPage();
-  // rotate pages
-  progressPagerTimer = setInterval(renderProgressPage, PAGE_SWITCH_MS);
-  revisitPagerTimer  = setInterval(renderRevisitPage,  PAGE_SWITCH_MS);
+function startPaging(){
+  stopPaging();
+  renderProgress();
+  renderRevisit();
+  progressTimer = setInterval(renderProgress, PAGE_SWITCH_MS);
+  revisitTimer  = setInterval(renderRevisit, PAGE_SWITCH_MS);
 }
 
 function loadProgress(){
   if (boardMeta) boardMeta.textContent = "Loading…";
-  if (progressBody) progressBody.innerHTML = '<tr><td colspan="5" class="muted">Loading…</td></tr>';
+  if (progressBody) progressBody.innerHTML = '<tr><td colspan="5" class="muted">...Loading</td></tr>';
 
   xhr(CSV_PROGRESS + "&t=" + Date.now(), function(err, res){
     if (err){
       progressData = [];
       if (progressBody) progressBody.innerHTML = '<tr><td colspan="5" class="muted">Offline</td></tr>';
       if (boardMeta) boardMeta.textContent = "Offline";
+      debug("Progress: " + err);
       return;
     }
 
     try{
       var rows = parseCSV(res).slice(1);
       var data = [];
-
       for (var i=0;i<rows.length;i++){
         var r = rows[i];
         var customer = (r[4]  || "").trim(); // E
@@ -135,85 +447,78 @@ function loadProgress(){
         var year     = (r[8]  || "").trim(); // I
         var chassis  = (r[9]  || "").trim(); // J
         var film     = (r[10] || "").trim(); // K
-
         if (!customer) continue;
 
-        data.push({
-          customer: customer,
-          model: model,
-          year: year,
-          chassis: chassis,
-          film: film
-        });
+        data.push({customer:customer, model:model, year:year, chassis:chassis, film:film});
       }
-
       progressData = data;
-      progressPage = 0; // restart paging when data updates
-      startPagers();
-
+      progressPage = 0;
+      debug("Progress OK rows=" + progressData.length);
+      startPaging();
     }catch(e){
       progressData = [];
       if (progressBody) progressBody.innerHTML = '<tr><td colspan="5" class="muted">Error</td></tr>';
       if (boardMeta) boardMeta.textContent = "Error";
+      debug("Progress parse error");
     }
   });
 }
 
 function loadRevisit(){
   if (revisitMeta) revisitMeta.textContent = "Loading…";
-  if (revisitBody) revisitBody.innerHTML = '<tr><td colspan="4" class="muted">Loading…</td></tr>';
+  if (revisitBody) revisitBody.innerHTML = '<tr><td colspan="4" class="muted">...Loading</td></tr>';
 
   xhr(CSV_REVISIT + "&t=" + Date.now(), function(err, res){
     if (err){
       revisitData = [];
       if (revisitBody) revisitBody.innerHTML = '<tr><td colspan="4" class="muted">Offline</td></tr>';
       if (revisitMeta) revisitMeta.textContent = "Offline";
+      debug("Revisit: " + err);
       return;
     }
 
     try{
       var rows = parseCSV(res).slice(1);
       var data = [];
-
       for (var i=0;i<rows.length;i++){
         var r = rows[i];
         var status = (r[0] || "").trim(); // A
         var name   = (r[3] || "").trim(); // D
         var car    = (r[5] || "").trim(); // F
         var color  = (r[6] || "").trim(); // G
-
         if (!name) continue;
 
-        data.push({
-          status: status,
-          name: name,
-          car: car,
-          color: color
-        });
+        data.push({status:status, name:name, car:car, color:color});
       }
-
       revisitData = data;
       revisitPage = 0;
-      startPagers();
-
+      debug("Revisit OK rows=" + revisitData.length);
+      startPaging();
     }catch(e){
       revisitData = [];
       if (revisitBody) revisitBody.innerHTML = '<tr><td colspan="4" class="muted">Error</td></tr>';
       if (revisitMeta) revisitMeta.textContent = "Error";
+      debug("Revisit parse error");
     }
   });
 }
 
 var refreshBtn = document.getElementById("refreshBtn");
-if (refreshBtn) refreshBtn.onclick = function(){ loadProgress(); loadRevisit(); };
+if (refreshBtn){
+  refreshBtn.onclick = function(){
+    debug("Manual refresh…");
+    loadManifest();
+    loadProgress();
+    loadRevisit();
+  };
+}
 
-// Initial load
+/* Initial load */
 loadProgress();
 loadRevisit();
 
-// Refresh from Google Sheets every 30s
-setInterval(loadProgress, 100000);
-setInterval(loadRevisit, 100000);
+/* Refresh tables every 30s */
+setInterval(loadProgress, 30000);
+setInterval(loadRevisit, 30000);
 
-// If data is already there, start pager anyway
-setTimeout(startPagers, 1500);
+})();
