@@ -8,17 +8,15 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;600;700;900&display=swap" rel="stylesheet">
-
   <link rel="stylesheet" href="styles.css"/>
 </head>
 
 <body>
   <div class="app">
 
-    <!-- TOP BAR -->
     <div class="topbar">
       <div class="brand">
-        <img class="brand-logo" src="media/logo.png" alt="logo" onerror="this.style.display='none'"/>
+        <img class="brand-logo" id="brandLogo" src="media/logo.png" alt="logo">
         <div class="brand-text">
           <div class="brand-title">ABDO EL AMIR™️</span></div>
           <div class="brand-sub">Nasr City Branch · Waiting Room</div>
@@ -43,28 +41,36 @@
       </div>
     </div>
 
-    <!-- MAIN GRID -->
     <div class="grid">
 
       <!-- LEFT: MEDIA -->
       <div class="media-card">
         <div class="media-frame" id="mediaFrame">
-          <!-- BASE BANNER (always exists) -->
-          <img id="mediaFallbackBanner" class="media-banner" src="media/banner.png" alt="banner" onerror="this.style.display='none'"/>
-          <!-- overlay image + video will be injected by JS -->
+          <!-- LOGO fallback inside media (instead of banner) -->
+          <div class="media-logo-fallback" id="mediaLogoFallback" aria-hidden="true">
+            <img src="media/logo.png" alt="">
+          </div>
+
           <div class="media-status" id="mediaStatus">Loading media…</div>
         </div>
 
-        <div class="media-caption">
-          <div class="headline">Trusted for over 50 years in Egypt</div>
-          <div class="subline">Cars protective films · UAE & KSA Soon</div>
+        <!-- Caption now has the BANNER behind the text -->
+        <div class="media-caption media-caption-banner">
+          <img class="caption-banner-img" src="media/banner.jpg" alt="">
+
+          <div class="caption-overlay"></div>
+
+          <div class="caption-text">
+            <div class="headline">Trusted for over 50 years in Egypt</div>
+            <div class="subline">Cars protective films · UAE &amp; KSA Soon</div>
+          </div>
         </div>
       </div>
 
       <!-- RIGHT: TABLES -->
       <div class="right-card">
 
-        <div class="panel">
+        <div class="panel" id="progressPanel">
           <div class="panel-head">
             <div class="panel-title">IN PROGRESS</div>
             <div class="panel-meta" id="boardMeta">Loading…</div>
@@ -88,7 +94,7 @@
           </div>
         </div>
 
-        <div class="panel">
+        <div class="panel" id="revisitPanel">
           <div class="panel-head">
             <div class="panel-title">REVISIT BOOKING TODAY</div>
             <div class="panel-meta" id="revisitMeta">Loading…</div>
@@ -114,11 +120,9 @@
       </div>
     </div>
 
-    <!-- ON-SCREEN DEBUG (TV has no console) -->
     <div id="debugBox" class="debug">Booting…</div>
   </div>
 
   <script src="script.js"></script>
 </body>
 </html>
-
