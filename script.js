@@ -75,9 +75,6 @@ setInterval(loadWeather, 10*60*1000);
 
 /* =========================
    MEDIA PLAYER — FIX IMAGE HANG
-   - Banner stays as base layer
-   - Separate overlay IMG for slideshow images
-   - Image timeout if neither onload nor onerror fires
 ========================= */
 var MEDIA_PATH = "media/shared/";
 var MANIFEST_URL = MEDIA_PATH + "manifest.json";
@@ -91,20 +88,13 @@ var idx = 0;
 var nextTimer = null;
 var failCount = 0;
 
-var IMAGE_HANG_TIMEOUT_MS = 10000; // ✅ if image hangs, skip after 10s
+var IMAGE_HANG_TIMEOUT_MS = 10000;
 var VIDEO_FIRSTFRAME_TIMEOUT_MS = 20000;
 var VIDEO_STALL_MS = 25000;
 
-function setStatus(t){
-  if (statusEl) statusEl.textContent = t || "";
-}
-function clearNext(){
-  if (nextTimer){ clearTimeout(nextTimer); nextTimer=null; }
-}
-function scheduleNext(ms){
-  clearNext();
-  nextTimer = setTimeout(playNext, ms);
-}
+function setStatus(t){ if (statusEl) statusEl.textContent = t || ""; }
+function clearNext(){ if (nextTimer){ clearTimeout(nextTimer); nextTimer=null; } }
+function scheduleNext(ms){ clearNext(); nextTimer = setTimeout(playNext, ms); }
 
 function removeVideo(){
   var v = frame ? frame.querySelector("video") : null;
@@ -127,7 +117,7 @@ function ensureOverlayImage(){
   img.style.inset = "0";
   img.style.width = "100%";
   img.style.height = "100%";
-  img.style.objectFit = "contain";   // images shrink-to-fit
+  img.style.objectFit = "contain";
   img.style.background = "#000";
   img.style.opacity = "0";
   img.style.transition = "opacity 600ms ease";
@@ -150,14 +140,13 @@ function hardResetIfNeeded(){
   }
 }
 
-/* ----- IMAGE ----- */
 function playImage(src, seconds){
   removeVideo();
   showBannerBase();
 
   var overlay = ensureOverlayImage();
   overlay.style.opacity = "0";
-  overlay.src = ""; // clear
+  overlay.src = "";
 
   var dur = (seconds || 15) * 1000;
   if (dur < 3000) dur = 3000;
@@ -179,13 +168,9 @@ function playImage(src, seconds){
     if (done) return;
     done = true;
     clearTimeout(hangTimer);
-
     failCount = 0;
     setStatus("");
-    // Show image above banner
     overlay.style.opacity = "1";
-
-    // move next after duration
     scheduleNext(dur);
   };
 
@@ -193,7 +178,6 @@ function playImage(src, seconds){
     if (done) return;
     done = true;
     clearTimeout(hangTimer);
-
     failCount++;
     setStatus("Image failed, skipping…");
     overlay.style.opacity = "0";
@@ -201,18 +185,13 @@ function playImage(src, seconds){
     scheduleNext(1200);
   };
 
-  // cache-bust for TVs
   overlay.src = MEDIA_PATH + src + "?t=" + Date.now();
 }
 
-/* ----- VIDEO ----- */
 function playVideo(src){
-  // Keep banner visible until video shows frames
   showBannerBase();
-
   var overlay = ensureOverlayImage();
-  overlay.style.opacity = "0"; // hide image overlay during video
-
+  overlay.style.opacity = "0";
   removeVideo();
   setStatus("Loading video…");
 
@@ -229,7 +208,7 @@ function playVideo(src){
   v.style.inset = "0";
   v.style.width = "100%";
   v.style.height = "100%";
-  v.style.objectFit = "cover";  // videos fill (no shrink)
+  v.style.objectFit = "cover";
   v.style.background = "#000";
 
   frame.appendChild(v);
@@ -248,10 +227,6 @@ function playVideo(src){
     }
   }, VIDEO_FIRSTFRAME_TIMEOUT_MS);
 
-  function markProgress(){
-    stallStart = Date.now();
-  }
-
   function failVideo(msg){
     clearTimeout(firstFrameTimer);
     failCount++;
@@ -262,10 +237,7 @@ function playVideo(src){
     scheduleNext(1500);
   }
 
-  v.onplaying = function(){
-    setStatus("Playing…");
-    markProgress();
-  };
+  v.onplaying = function(){ setStatus("Playing…"); stallStart = Date.now(); };
 
   v.ontimeupdate = function(){
     if (v.currentTime !== lastTime){
@@ -273,31 +245,21 @@ function playVideo(src){
       startedFrames = true;
       failCount = 0;
       setStatus("");
-      // Only now hide banner (video is truly rendering)
       if (bannerBase) bannerBase.style.display = "none";
-      markProgress();
+      stallStart = Date.now();
     }
-    // stall protection
     if (Date.now() - stallStart > VIDEO_STALL_MS){
       failVideo("Video froze, skipping…");
     }
   };
 
-  v.onwaiting = function(){
-    showBannerBase();
-    setStatus("Buffering…");
-  };
-
-  v.onstalled = function(){
-    showBannerBase();
-    setStatus("Stalled…");
-  };
-
+  v.onwaiting = function(){ showBannerBase(); setStatus("Buffering…"); };
+  v.onstalled = function(){ showBannerBase(); setStatus("Stalled…"); };
   v.onerror = function(){ failVideo("Video error, skipping…"); };
 
   v.onended = function(){
     clearTimeout(firstFrameTimer);
-    showBannerBase(); // prevent black flash
+    showBannerBase();
     removeVideo();
     scheduleNext(500);
   };
@@ -312,7 +274,6 @@ function playVideo(src){
   }
 }
 
-/* ----- PLAYLIST ----- */
 function playNext(){
   clearNext();
 
@@ -330,7 +291,6 @@ function playNext(){
     return;
   }
 
-  // Always show banner during transitions
   showBannerBase();
   removeVideo();
 
@@ -343,7 +303,6 @@ function playNext(){
 function loadManifest(){
   showBannerBase();
   setStatus("Loading media…");
-
   xhr(MANIFEST_URL + "?t=" + Date.now(), function(err, res){
     if (err){
       setStatus("Manifest offline");
@@ -365,11 +324,70 @@ function loadManifest(){
     }
   });
 }
-
 loadManifest();
 
 /* =========================
-   TABLES (same as before)
+   AUTO-SCROLL (TV SAFE) using scrollTop
+   - Works on TVs that break CSS transform animations
+========================= */
+var scrollers = {}; // store per-wrap state
+
+function stopAutoScroll(wrapId){
+  var st = scrollers[wrapId];
+  if (!st) return;
+  if (st.timer) clearInterval(st.timer);
+  scrollers[wrapId] = null;
+}
+
+function startAutoScroll(wrapId){
+  stopAutoScroll(wrapId);
+
+  var wrap = document.getElementById(wrapId);
+  if (!wrap) return;
+
+  // IMPORTANT: enable scrollTop scrolling
+  wrap.style.overflowY = "hidden"; // hide native scrollbar
+  wrap.scrollTop = 0;
+
+  var dir = 1;          // 1 down, -1 up
+  var speed = 0.6;      // px per tick
+  var tickMs = 20;      // interval
+  var pauseMs = 1800;   // pause at top/bottom
+  var paused = false;
+
+  function maxScroll(){
+    return wrap.scrollHeight - wrap.clientHeight;
+  }
+
+  function step(){
+    if (paused) return;
+
+    var max = maxScroll();
+    if (max <= 2){
+      wrap.scrollTop = 0; // no need to scroll
+      return;
+    }
+
+    wrap.scrollTop = wrap.scrollTop + (dir * speed);
+
+    if (wrap.scrollTop >= max){
+      wrap.scrollTop = max;
+      paused = true;
+      setTimeout(function(){ dir = -1; paused = false; }, pauseMs);
+    } else if (wrap.scrollTop <= 0){
+      wrap.scrollTop = 0;
+      paused = true;
+      setTimeout(function(){ dir = 1; paused = false; }, pauseMs);
+    }
+  }
+
+  scrollers[wrapId] = {
+    timer: setInterval(step, tickMs)
+  };
+}
+
+/* =========================
+   TABLES
 ========================= */
 var CSV_PROGRESS =
 "https://docs.google.com/spreadsheets/d/e/2PACX-1vSKpulVdyocoyi3Vj-BHBG9aOcfsG-QkgLtwlLGjbWFy_YkTmiN5mOsiYfWS6_sqLNtS4hCie2c3JDH/pub?gid=2111665249&single=true&output=csv";
@@ -390,6 +408,7 @@ function loadProgress(){
     if (err){
       if (progressBody) progressBody.innerHTML = '<tr><td colspan="5" class="muted">Offline</td></tr>';
       if (boardMeta) boardMeta.textContent = "Offline";
+      startAutoScroll("progressWrap"); // still attempt scroll
       return;
     }
     try{
@@ -415,9 +434,13 @@ function loadProgress(){
       if (!html) html = '<tr><td colspan="5" class="muted">No cars in progress</td></tr>';
       if (progressBody) progressBody.innerHTML = html;
       if (boardMeta) boardMeta.textContent = "Live · " + count;
+
+      // restart scroll after content changes
+      setTimeout(function(){ startAutoScroll("progressWrap"); }, 400);
     }catch(e){
       if (progressBody) progressBody.innerHTML = '<tr><td colspan="5" class="muted">Error</td></tr>';
       if (boardMeta) boardMeta.textContent = "Error";
+      setTimeout(function(){ startAutoScroll("progressWrap"); }, 400);
     }
   });
 }
@@ -430,6 +453,7 @@ function loadRevisit(){
     if (err){
       if (revisitBody) revisitBody.innerHTML = '<tr><td colspan="4" class="muted">Offline</td></tr>';
       if (revisitMeta) revisitMeta.textContent = "Offline";
+      startAutoScroll("revisitWrap");
       return;
     }
     try{
@@ -453,9 +477,12 @@ function loadRevisit(){
       if (!html) html = '<tr><td colspan="4" class="muted">No bookings today</td></tr>';
       if (revisitBody) revisitBody.innerHTML = html;
       if (revisitMeta) revisitMeta.textContent = "Live · " + count;
+
+      setTimeout(function(){ startAutoScroll("revisitWrap"); }, 400);
     }catch(e){
       if (revisitBody) revisitBody.innerHTML = '<tr><td colspan="4" class="muted">Error</td></tr>';
       if (revisitMeta) revisitMeta.textContent = "Error";
+      setTimeout(function(){ startAutoScroll("revisitWrap"); }, 400);
     }
   });
 }
@@ -465,7 +492,15 @@ if (refreshBtn) refreshBtn.onclick = function(){ loadProgress(); loadRevisit(); 
 
 loadProgress();
 loadRevisit();
+
+// Refresh tables every 30s
 setInterval(loadProgress, 30000);
 setInterval(loadRevisit, 30000);
+
+// Ensure scrolling starts even if first load is short
+setTimeout(function(){
+  startAutoScroll("progressWrap");
+  startAutoScroll("revisitWrap");
+}, 1500);
 
 })();
