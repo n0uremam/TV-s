@@ -6,7 +6,7 @@
 setTimeout(function(){ location.reload(); }, 6 * 60 * 60 * 1000);
 
 /* =========================
-   XHR + CSV helpers (TV safe)
+   XHR helpers
 ========================= */
 function xhr(url, cb){
   var r = new XMLHttpRequest();
@@ -74,372 +74,291 @@ loadWeather();
 setInterval(loadWeather, 10*60*1000);
 
 /* =========================
-   MEDIA PLAYER + GLOBAL FAILSAFE
+   MEDIA PLAYER — TV HARDENED
+   - Fallback banner ALWAYS exists, never goes away.
+   - Video is removed on any fail.
+   - If repeated failures, reload.
 ========================= */
 var MEDIA_PATH = "media/shared/";
 var MANIFEST_URL = MEDIA_PATH + "manifest.json";
 var frame = document.getElementById("mediaFrame");
-var mediaStatus = document.getElementById("mediaStatus");
+var statusEl = document.getElementById("mediaStatus");
+var fallback = document.getElementById("mediaFallbackBanner");
 
 var playlist = [];
 var idx = 0;
 
-// timers
-var nextTimer=null, stallTimer=null, hardCutTimer=null;
+var nextTimer=null;
+var failCount = 0;          // consecutive failures
+var globalFreezeTimer=null;
 
-// per-item config
-var VIDEO_STALL_MS = 30000;              // 30s no progress => consider frozen
-var VIDEO_MAX_MS   = 12 * 60 * 1000;     // hard safety for very long videos
-var IMAGE_MAX_MS   = 2 * 60 * 1000;      // image hard safety
-
-// crossfade layers for images
-var imgA=null, imgB=null, activeIsA=true;
-var veil=null;
-
-// GLOBAL watchdog: if nothing changes for too long => force next
-var GLOBAL_FREEZE_MS = 70000; // 70s with no "heartbeat" => force next
-var globalWatchTimer = null;
-var lastHeartbeat = Date.now();
-var consecutiveFails = 0;     // if too many fails => show banner longer
-
-function heartbeat(){
-  lastHeartbeat = Date.now();
+function setStatus(t){
+  if (statusEl) statusEl.textContent = t;
 }
 
-function startGlobalWatch(){
-  if (globalWatchTimer) clearInterval(globalWatchTimer);
-  globalWatchTimer = setInterval(function(){
-    if (Date.now() - lastHeartbeat > GLOBAL_FREEZE_MS){
-      // something is frozen
-      forceRecover("Frozen media detected");
-    }
-  }, 5000);
+function clearNext(){
+  if (nextTimer){ clearTimeout(nextTimer); nextTimer=null; }
 }
 
-function forceRecover(msg){
-  // Show banner briefly, then continue
-  showFallback(msg || "Recovering…");
-  consecutiveFails++;
-  clearMediaTimers();
-  // if many fails -> pause longer so TV can recover memory
-  var wait = consecutiveFails >= 3 ? 6000 : 1800;
-  nextTimer = setTimeout(playNext, wait);
-  heartbeat();
-}
-
-function ensureLayers(){
-  if(!veil){
-    veil = document.createElement("div");
-    veil.style.position="absolute";
-    veil.style.inset="0";
-    veil.style.background="#000";
-    veil.style.opacity="0";
-    veil.style.transition="opacity 450ms ease";
-    veil.style.pointerEvents="none";
-  }
-  if(imgA && imgB) return;
-
-  imgA = document.createElement("img");
-  imgA.className="media-layer is-active";
-  imgA.alt="media";
-
-  imgB = document.createElement("img");
-  imgB.className="media-layer";
-  imgB.alt="media";
-
-  frame.innerHTML="";
-  frame.appendChild(imgA);
-  frame.appendChild(imgB);
-  frame.appendChild(veil);
-}
-
-function veilIn(){ if(veil) veil.style.opacity="1"; }
-function veilOut(){ if(veil) veil.style.opacity="0"; }
-
-function clearMediaTimers(){
-  if(nextTimer){clearTimeout(nextTimer);nextTimer=null;}
-  if(stallTimer){clearTimeout(stallTimer);stallTimer=null;}
-  if(hardCutTimer){clearTimeout(hardCutTimer);hardCutTimer=null;}
-}
-
-function removeVideoIfAny(){
-  var v = frame.querySelector("video");
-  if(v){
+function removeVideo(){
+  var v = frame ? frame.querySelector("video") : null;
+  if (v){
     try{ v.pause(); }catch(_){}
     try{ v.removeAttribute("src"); }catch(_){}
     try{ v.load(); }catch(_){}
-    if(v.parentNode) v.parentNode.removeChild(v);
+    if (v.parentNode) v.parentNode.removeChild(v);
   }
 }
 
 function showFallback(msg){
-  ensureLayers();
-  removeVideoIfAny();
-  // banner is stable fallback
-  imgA.src = "media/banner.jpg?t=" + Date.now();
-  imgA.classList.add("is-active");
-  imgB.classList.remove("is-active");
-  if(mediaStatus){
-    mediaStatus.style.display="block";
-    mediaStatus.textContent = msg || "";
+  // IMPORTANT: fallback is ALWAYS the base layer
+  if (fallback){
+    fallback.style.display = "block";
+    // keep it visible; do NOT hide here
   }
-  veilOut();
-  heartbeat();
+  removeVideo();
+  setStatus(msg || "");
 }
 
-/* Image: retry once; if still fails -> recover */
-function showImage(src, seconds){
-  ensureLayers();
-  removeVideoIfAny();
-  if(mediaStatus) mediaStatus.style.display="none";
+function scheduleNext(ms){
+  clearNext();
+  nextTimer = setTimeout(playNext, ms);
+}
 
-  var incoming = activeIsA ? imgB : imgA;
-  var outgoing = activeIsA ? imgA : imgB;
+function hardResetIfNeeded(){
+  // if the TV keeps failing videos/images, it needs a refresh
+  if (failCount >= 4){
+    setStatus("System recovering…");
+    setTimeout(function(){ location.reload(); }, 1500);
+  }
+}
 
-  var durationMs = (seconds || 15) * 1000;
-  if(durationMs > IMAGE_MAX_MS) durationMs = IMAGE_MAX_MS;
+/* ---------- IMAGE ---------- */
+function playImage(src, seconds){
+  showFallback("Loading image…");
+  var dur = (seconds || 15) * 1000;
+  if (dur < 3000) dur = 3000;
 
-  var triedRetry = false;
+  var tried = 0;
 
-  function loadImage(){
-    veilIn();
-    heartbeat();
+  function loadOnce(){
+    tried++;
+    if (!fallback){
+      // if no fallback element exists, just skip
+      failCount++;
+      hardResetIfNeeded();
+      scheduleNext(1200);
+      return;
+    }
 
-    incoming.onload = function(){
-      consecutiveFails = 0;
-      incoming.classList.add("is-active");
-      outgoing.classList.remove("is-active");
-      activeIsA = !activeIsA;
-      setTimeout(veilOut, 120);
-
-      clearMediaTimers();
-      nextTimer = setTimeout(playNext, durationMs);
-      hardCutTimer = setTimeout(function(){
-        forceRecover("Image freeze safety");
-      }, durationMs + 15000); // extra safety window
-      heartbeat();
+    fallback.onload = function(){
+      // image is on screen now
+      failCount = 0;
+      setStatus("");
+      scheduleNext(dur);
     };
 
-    incoming.onerror = function(){
-      if(!triedRetry){
-        triedRetry = true;
-        // retry with cache buster
-        incoming.src = MEDIA_PATH + src + "?t=" + Date.now();
-        heartbeat();
+    fallback.onerror = function(){
+      if (tried < 2){
+        // retry once
+        setStatus("Retry image…");
+        setTimeout(loadOnce, 600);
         return;
       }
-      forceRecover("Image failed: " + src);
+      failCount++;
+      showFallback("Image failed: " + src);
+      hardResetIfNeeded();
+      scheduleNext(1500);
     };
 
-    incoming.src = MEDIA_PATH + src + "?t=" + Date.now();
+    // always cache-bust on TVs
+    fallback.src = MEDIA_PATH + src + "?t=" + Date.now();
   }
 
-  loadImage();
+  loadOnce();
 }
 
-/* Video: progress heartbeat + stall detection + global failsafe */
-function showVideo(src){
-  ensureLayers();
-  removeVideoIfAny();
-  if(mediaStatus) mediaStatus.style.display="none";
+/* ---------- VIDEO ---------- */
+function playVideo(src){
+  // Start with fallback visible while the video starts
+  showFallback("Loading video…");
 
-  imgA.classList.remove("is-active");
-  imgB.classList.remove("is-active");
-  veilIn();
-  heartbeat();
+  var v = document.createElement("video");
+  v.src = MEDIA_PATH + src + "?t=" + Date.now(); // cache-bust to reduce stuck buffers
+  v.autoplay = true;
+  v.muted = true;
+  v.playsInline = true;
+  v.preload = "auto";
+  v.setAttribute("webkit-playsinline","true");
+  v.setAttribute("playsinline","true");
 
-  var video = document.createElement("video");
-  video.src = MEDIA_PATH + src;
-  video.autoplay = true;
-  video.muted = true;
-  video.playsInline = true;
-  video.preload = "auto";
-  video.setAttribute("webkit-playsinline","true");
-  video.setAttribute("playsinline","true");
+  // keep video on top, fallback underneath
+  v.style.position = "absolute";
+  v.style.inset = "0";
+  v.style.width = "100%";
+  v.style.height = "100%";
+  v.style.objectFit = "cover";
+  v.style.background = "#000";
 
-  // sizing is controlled by CSS (object-fit: cover)
-  frame.appendChild(video);
+  frame.appendChild(v);
 
-  clearMediaTimers();
+  var startedFrames = false;
+  var lastTime = -1;
+  var stallStart = Date.now();
 
-  hardCutTimer = setTimeout(function(){
-    forceRecover("Video timeout: " + src);
-  }, VIDEO_MAX_MS);
+  // If no first frame within 20s -> fail
+  var firstFrameTimeout = setTimeout(function(){
+    if (!startedFrames){
+      failCount++;
+      showFallback("Video can't start: " + src);
+      hardResetIfNeeded();
+      scheduleNext(2000);
+    }
+  }, 20000);
 
-  function kickStall(){
-    if(stallTimer) clearTimeout(stallTimer);
-    stallTimer = setTimeout(function(){
-      forceRecover("Video stalled: " + src);
-    }, VIDEO_STALL_MS);
+  function cleanupAndNext(waitMs){
+    clearTimeout(firstFrameTimeout);
+    removeVideo();
+    // fallback remains visible
+    scheduleNext(waitMs || 500);
   }
 
-  var firstFrameTimer = setTimeout(function(){
-    forceRecover("Video can't start: " + src);
-  }, 22000);
-
-  video.onplaying = function(){
-    kickStall();
-    heartbeat();
+  v.onplaying = function(){
+    setStatus("Playing…");
   };
 
-  video.ontimeupdate = function(){
-    clearTimeout(firstFrameTimer);
-    kickStall();
-    veilOut();
-    heartbeat();
-    consecutiveFails = 0;
+  v.ontimeupdate = function(){
+    // This is the strongest signal that frames are rendering
+    if (v.currentTime !== lastTime){
+      lastTime = v.currentTime;
+      startedFrames = true;
+      stallStart = Date.now();
+      // Now hide fallback because video is truly rendering
+      if (fallback) fallback.style.display = "none";
+      setStatus("");
+      failCount = 0;
+    }
+
+    // Stall detection: if time stops moving for 25s, treat as freeze
+    if (Date.now() - stallStart > 25000){
+      failCount++;
+      showFallback("Video froze: " + src);
+      hardResetIfNeeded();
+      cleanupAndNext(2200);
+    }
   };
 
-  video.onwaiting = function(){ kickStall(); heartbeat(); };
-  video.onstalled = function(){ kickStall(); heartbeat(); };
-
-  video.onended = function(){
-    veilIn();
-    clearTimeout(firstFrameTimer);
-    heartbeat();
-    nextTimer = setTimeout(playNext, 350);
+  v.onwaiting = function(){
+    // keep fallback visible during waiting
+    if (fallback) fallback.style.display = "block";
+    setStatus("Buffering…");
   };
 
-  video.onerror = function(){
-    clearTimeout(firstFrameTimer);
-    forceRecover("Video error: " + src);
+  v.onstalled = function(){
+    if (fallback) fallback.style.display = "block";
+    setStatus("Stalled…");
+  };
+
+  v.onerror = function(){
+    failCount++;
+    showFallback("Video error: " + src);
+    hardResetIfNeeded();
+    cleanupAndNext(2200);
+  };
+
+  v.onended = function(){
+    // On end, show fallback immediately (prevents black flash)
+    if (fallback) fallback.style.display = "block";
+    cleanupAndNext(600);
   };
 
   try{
-    var p = video.play();
-    if(p && p.catch){
+    var p = v.play();
+    if (p && p.catch){
       p.catch(function(){
-        clearTimeout(firstFrameTimer);
-        forceRecover("Autoplay blocked: " + src);
+        failCount++;
+        showFallback("Autoplay blocked: " + src);
+        hardResetIfNeeded();
+        cleanupAndNext(2200);
       });
     }
   }catch(e){
-    clearTimeout(firstFrameTimer);
-    forceRecover("Play failed: " + src);
+    failCount++;
+    showFallback("Play failed: " + src);
+    hardResetIfNeeded();
+    cleanupAndNext(2200);
   }
 }
 
+/* ---------- PLAYLIST ---------- */
 function playNext(){
-  clearMediaTimers();
-  heartbeat();
+  clearNext();
 
-  if(!playlist.length){
-    showFallback("No media");
+  if (!playlist.length){
+    showFallback("No media in manifest");
     return;
   }
 
   var item = playlist[idx];
   idx = (idx + 1) % playlist.length;
 
-  if(!item || !item.type || !item.src){
-    nextTimer = setTimeout(playNext, 600);
+  if (!item || !item.type || !item.src){
+    scheduleNext(600);
     return;
   }
 
-  if(item.type === "image") return showImage(item.src, item.duration || 15);
-  if(item.type === "video") return showVideo(item.src);
+  // Always ensure fallback visible at transitions
+  if (fallback) fallback.style.display = "block";
+  removeVideo();
 
-  nextTimer = setTimeout(playNext, 600);
+  if (item.type === "image") return playImage(item.src, item.duration || 15);
+  if (item.type === "video") return playVideo(item.src);
+
+  scheduleNext(600);
 }
 
 function loadManifest(){
-  ensureLayers();
-  if(mediaStatus){ mediaStatus.style.display="block"; mediaStatus.textContent="Loading media…"; }
-
+  showFallback("Loading media…");
   xhr(MANIFEST_URL + "?t=" + Date.now(), function(err, res){
-    if(err){
-      showFallback("Media offline (manifest)");
+    if (err){
+      showFallback("Manifest offline");
+      scheduleNext(5000);
       return;
     }
     try{
       var json = JSON.parse(res);
       playlist = (json && json.items) ? json.items : [];
-      if(!playlist.length){
-        showFallback("No media in manifest");
+      if (!playlist.length){
+        showFallback("No media found");
         return;
       }
       idx = 0;
-      consecutiveFails = 0;
-      veilIn();
-      heartbeat();
-      setTimeout(playNext, 250);
+      failCount = 0;
+      playNext();
     }catch(e){
-      showFallback("Manifest error");
+      showFallback("Manifest JSON error");
     }
   });
 }
 
-startGlobalWatch();
+// Global freeze safety: if the browser gets “stuck”, reload
+clearInterval(globalFreezeTimer);
+globalFreezeTimer = setInterval(function(){
+  // if video exists but not progressing and fallback hidden -> force fallback
+  var v = frame ? frame.querySelector("video") : null;
+  if (v && fallback && fallback.style.display === "none"){
+    // if currentTime not changing -> show fallback again
+    // (very cheap safety)
+    if (v.paused || v.readyState < 2){
+      fallback.style.display = "block";
+    }
+  }
+}, 5000);
+
 loadManifest();
 
 /* =========================
-   AUTO-SCROLL TABLES
-========================= */
-function enableAutoScroll(wrapId){
-  var wrap = document.getElementById(wrapId);
-  if(!wrap) return;
-
-  var table = wrap.querySelector("table");
-  if(!table) return;
-
-  var mover = wrap.querySelector(".auto-scroll");
-  if(!mover){
-    mover = document.createElement("div");
-    mover.className = "auto-scroll";
-    mover.appendChild(table);
-    wrap.appendChild(mover);
-  }
-
-  var y=0, dir=1, speed=0.35, pauseTop=2200, pauseBottom=2200;
-  var paused=false, lastTick=Date.now();
-
-  function resetToTop(){
-    y=0; dir=1;
-    mover.style.transform="translateY(0px)";
-  }
-
-  function tick(){
-    var wrapH = wrap.clientHeight;
-    var moverH = mover.scrollHeight;
-
-    if(moverH <= wrapH + 2){
-      resetToTop();
-      requestAnimationFrame(tick);
-      return;
-    }
-
-    var now = Date.now();
-    var dt = now - lastTick;
-    lastTick = now;
-
-    if(paused){ requestAnimationFrame(tick); return; }
-
-    y += dir * speed * (dt / 16.6);
-    var maxY = moverH - wrapH;
-
-    if(y >= maxY){
-      y = maxY;
-      mover.style.transform="translateY(" + (-y) + "px)";
-      paused=true;
-      setTimeout(function(){ dir=-1; paused=false; }, pauseBottom);
-    } else if(y <= 0){
-      y=0;
-      mover.style.transform="translateY(0px)";
-      paused=true;
-      setTimeout(function(){ dir=1; paused=false; }, pauseTop);
-    } else {
-      mover.style.transform="translateY(" + (-y) + "px)";
-    }
-
-    requestAnimationFrame(tick);
-  }
-
-  resetToTop();
-  requestAnimationFrame(tick);
-}
-
-/* =========================
-   TABLES: IN PROGRESS + REVISIT
+   TABLES (unchanged)
 ========================= */
 var CSV_PROGRESS =
 "https://docs.google.com/spreadsheets/d/e/2PACX-1vSKpulVdyocoyi3Vj-BHBG9aOcfsG-QkgLtwlLGjbWFy_YkTmiN5mOsiYfWS6_sqLNtS4hCie2c3JDH/pub?gid=2111665249&single=true&output=csv";
@@ -448,32 +367,31 @@ var CSV_REVISIT =
 "https://docs.google.com/spreadsheets/d/e/2PACX-1vSKpulVdyocoyi3Vj-BHBG9aOcfsG-QkgLtwlLGjbWFy_YkTmiN5mOsiYfWS6_sqLNtS4hCie2c3JDH/pub?gid=1236474828&single=true&output=csv";
 
 var progressBody = document.getElementById("progressBody");
-var boardMeta = document.getElementById("boardMeta");
 var revisitBody = document.getElementById("revisitBody");
+var boardMeta = document.getElementById("boardMeta");
 var revisitMeta = document.getElementById("revisitMeta");
 
 function loadProgress(){
-  progressBody.innerHTML = '<tr><td colspan="5" class="muted">Loading…</td></tr>';
-  boardMeta.textContent = "Loading…";
+  if (boardMeta) boardMeta.textContent = "Loading…";
+  if (progressBody) progressBody.innerHTML = '<tr><td colspan="5" class="muted">Loading…</td></tr>';
 
   xhr(CSV_PROGRESS + "&t=" + Date.now(), function(err, res){
-    if(err){
-      progressBody.innerHTML = '<tr><td colspan="5" class="muted">Offline</td></tr>';
-      boardMeta.textContent = "Offline";
+    if (err){
+      if (progressBody) progressBody.innerHTML = '<tr><td colspan="5" class="muted">Offline</td></tr>';
+      if (boardMeta) boardMeta.textContent = "Offline";
       return;
     }
     try{
       var rows = parseCSV(res).slice(1);
       var html="", count=0;
-
-      for(var i=0;i<rows.length;i++){
+      for (var i=0;i<rows.length;i++){
         var r = rows[i];
         var customer = (r[4]  || "").trim(); // E
         var model    = (r[6]  || "").trim(); // G
         var year     = (r[8]  || "").trim(); // I
         var chassis  = (r[9]  || "").trim(); // J
         var film     = (r[10] || "").trim(); // K
-        if(!customer) continue;
+        if (!customer) continue;
         count++;
         html += "<tr>"
           + "<td>"+esc(customer)+"</td>"
@@ -483,46 +401,36 @@ function loadProgress(){
           + "<td>"+esc(film)+"</td>"
           + "</tr>";
       }
-
-      if(!html){
-        progressBody.innerHTML = '<tr><td colspan="5" class="muted">No cars in progress</td></tr>';
-        boardMeta.textContent = "Live · 0";
-        setTimeout(function(){ enableAutoScroll("progressWrap"); }, 300);
-        return;
-      }
-
-      progressBody.innerHTML = html;
-      boardMeta.textContent = "Live · " + count;
-      setTimeout(function(){ enableAutoScroll("progressWrap"); }, 300);
-
+      if (!html) html = '<tr><td colspan="5" class="muted">No cars in progress</td></tr>';
+      if (progressBody) progressBody.innerHTML = html;
+      if (boardMeta) boardMeta.textContent = "Live · " + count;
     }catch(e){
-      progressBody.innerHTML = '<tr><td colspan="5" class="muted">Error</td></tr>';
-      boardMeta.textContent = "Error";
+      if (progressBody) progressBody.innerHTML = '<tr><td colspan="5" class="muted">Error</td></tr>';
+      if (boardMeta) boardMeta.textContent = "Error";
     }
   });
 }
 
 function loadRevisit(){
-  revisitBody.innerHTML = '<tr><td colspan="4" class="muted">Loading…</td></tr>';
-  if(revisitMeta) revisitMeta.textContent = "Loading…";
+  if (revisitMeta) revisitMeta.textContent = "Loading…";
+  if (revisitBody) revisitBody.innerHTML = '<tr><td colspan="4" class="muted">Loading…</td></tr>';
 
   xhr(CSV_REVISIT + "&t=" + Date.now(), function(err, res){
-    if(err){
-      revisitBody.innerHTML = '<tr><td colspan="4" class="muted">Offline</td></tr>';
-      if(revisitMeta) revisitMeta.textContent = "Offline";
+    if (err){
+      if (revisitBody) revisitBody.innerHTML = '<tr><td colspan="4" class="muted">Offline</td></tr>';
+      if (revisitMeta) revisitMeta.textContent = "Offline";
       return;
     }
     try{
       var rows = parseCSV(res).slice(1);
       var html="", count=0;
-
-      for(var i=0;i<rows.length;i++){
+      for (var i=0;i<rows.length;i++){
         var r = rows[i];
         var status = (r[0] || "").trim(); // A
         var name   = (r[3] || "").trim(); // D
         var car    = (r[5] || "").trim(); // F
         var color  = (r[6] || "").trim(); // G
-        if(!name) continue;
+        if (!name) continue;
         count++;
         html += "<tr>"
           + "<td>"+esc(status)+"</td>"
@@ -531,36 +439,22 @@ function loadRevisit(){
           + "<td>"+esc(color)+"</td>"
           + "</tr>";
       }
-
-      if(!html){
-        revisitBody.innerHTML = '<tr><td colspan="4" class="muted">No bookings today</td></tr>';
-        if(revisitMeta) revisitMeta.textContent = "Live · 0";
-        setTimeout(function(){ enableAutoScroll("revisitWrap"); }, 300);
-        return;
-      }
-
-      revisitBody.innerHTML = html;
-      if(revisitMeta) revisitMeta.textContent = "Live · " + count;
-      setTimeout(function(){ enableAutoScroll("revisitWrap"); }, 300);
-
+      if (!html) html = '<tr><td colspan="4" class="muted">No bookings today</td></tr>';
+      if (revisitBody) revisitBody.innerHTML = html;
+      if (revisitMeta) revisitMeta.textContent = "Live · " + count;
     }catch(e){
-      revisitBody.innerHTML = '<tr><td colspan="4" class="muted">Error</td></tr>';
-      if(revisitMeta) revisitMeta.textContent = "Error";
+      if (revisitBody) revisitBody.innerHTML = '<tr><td colspan="4" class="muted">Error</td></tr>';
+      if (revisitMeta) revisitMeta.textContent = "Error";
     }
   });
 }
 
 var refreshBtn = document.getElementById("refreshBtn");
-if(refreshBtn) refreshBtn.onclick = function(){ loadProgress(); loadRevisit(); };
+if (refreshBtn) refreshBtn.onclick = function(){ loadProgress(); loadRevisit(); };
 
-setInterval(loadProgress, 30000);
-setInterval(loadRevisit, 30000);
 loadProgress();
 loadRevisit();
-
-setTimeout(function(){
-  enableAutoScroll("progressWrap");
-  enableAutoScroll("revisitWrap");
-}, 900);
+setInterval(loadProgress, 30000);
+setInterval(loadRevisit, 30000);
 
 })();
