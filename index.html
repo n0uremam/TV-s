@@ -1,112 +1,123 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>ABDO EL AMIR — Waiting Room</title>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Abdo El Amir TV</title>
 
-  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;600;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./styles.css?v=11" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;600;700;900&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="styles.css"/>
 </head>
 
 <body>
+  <div class="app">
 
-<header class="topbar">
-  <div class="brand">
-    <img src="media/logo.png" class="logo" alt="Logo">
-    <div>
-      <div class="name">ABDO EL AMIR™️</div>
-      <div class="tagline">Nasr City Branch · Waiting Room</div>
-    </div>
-  </div>
+    <!-- TOP BAR -->
+    <div class="topbar">
+      <div class="brand">
+        <img class="brand-logo" src="images/logo.png" alt="logo" onerror="this.style.display='none'"/>
+        <div class="brand-text">
+          <div class="brand-title">ABDO EL AMIR™️</span></div>
+          <div class="brand-sub">Nasr City Branch · Waiting Room</div>
+        </div>
+      </div>
 
-  <div class="hud">
-    <div class="hud-item">
-      <div class="hud-k">Date</div>
-      <div class="hud-v" id="dateLocal">--</div>
-    </div>
-    <div class="hud-item">
-      <div class="hud-k">Time</div>
-      <div class="hud-v" id="timeLocal">--:--</div>
-    </div>
-    <div class="hud-item">
-      <div class="hud-k">Weather</div>
-      <div class="hud-v" id="weatherCairo">--</div>
-    </div>
-  </div>
-</header>
+      <div class="chips">
+        <div class="chip">
+          <div class="chip-label">Date</div>
+          <div class="chip-value" id="dateLocal">--</div>
+        </div>
+        <div class="chip">
+          <div class="chip-label">Time</div>
+          <div class="chip-value" id="timeLocal">--:--:--</div>
+        </div>
+        <div class="chip">
+          <div class="chip-label">Weather</div>
+          <div class="chip-value"><span id="weatherCairo">--</span></div>
+        </div>
 
-<main class="layout">
-
-  <!-- LEFT -->
-  <section class="stage">
-    <div class="banner">
-      <img src="media/banner.jpg" alt="Banner">
-      <div class="banner-overlay"></div>
-      <div class="banner-text">
-        <div class="banner-title">Trusted for over 50 years in Egypt</div>
-        <div class="banner-sub">Cars protective films · UAE & KSA Soon</div>
+        <button class="btn" id="refreshBtn" type="button">Refresh</button>
       </div>
     </div>
 
-    <div id="mediaFrame" class="frame">
-      <div class="center muted" id="mediaStatus">Loading media…</div>
+    <!-- MAIN GRID -->
+    <div class="grid">
+
+      <!-- LEFT: MEDIA -->
+      <div class="media-card">
+        <div class="media-frame" id="mediaFrame">
+          <!-- BASE BANNER (always exists) -->
+          <img id="mediaFallbackBanner" class="media-banner" src="images/banner.png" alt="banner" onerror="this.style.display='none'"/>
+          <!-- overlay image + video will be injected by JS -->
+          <div class="media-status" id="mediaStatus">Loading media…</div>
+        </div>
+
+        <div class="media-caption">
+          <div class="headline">Trusted for over 50 years in Egypt</div>
+          <div class="subline">Cars protective films · UAE & KSA Soon</div>
+        </div>
+      </div>
+
+      <!-- RIGHT: TABLES -->
+      <div class="right-card">
+
+        <div class="panel">
+          <div class="panel-head">
+            <div class="panel-title">IN PROGRESS</div>
+            <div class="panel-meta" id="boardMeta">Loading…</div>
+          </div>
+
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>CUSTOMER NAME</th>
+                  <th>CAR MODEL</th>
+                  <th>YEAR</th>
+                  <th>CHASSIS</th>
+                  <th>FILM TYPE</th>
+                </tr>
+              </thead>
+              <tbody id="progressBody">
+                <tr><td colspan="5" class="muted">...Loading</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <div class="panel-title">REVISIT BOOKING TODAY</div>
+            <div class="panel-meta" id="revisitMeta">Loading…</div>
+          </div>
+
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>STATUS</th>
+                  <th>NAME</th>
+                  <th>CAR MODEL</th>
+                  <th>CAR COLOR</th>
+                </tr>
+              </thead>
+              <tbody id="revisitBody">
+                <tr><td colspan="4" class="muted">...Loading</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
     </div>
-  </section>
 
-  <!-- RIGHT -->
-  <aside class="board">
+    <!-- ON-SCREEN DEBUG (TV has no console) -->
+    <div id="debugBox" class="debug">Booting…</div>
+  </div>
 
-    <div class="board-head">
-      <div class="board-title">IN PROGRESS</div>
-      <div class="board-sub" id="boardMeta">Live</div>
-      <button id="refreshBtn" class="btn">Refresh</button>
-    </div>
-
-    <div class="table-wrap" id="progressWrap">
-      <table class="table">
-        <thead>
-          <tr>
-            <th>CUSTOMER NAME</th>
-            <th>CAR MODEL</th>
-            <th>YEAR</th>
-            <th>CHASSIS</th>
-            <th>FILM TYPE</th>
-          </tr>
-        </thead>
-        <tbody id="progressBody">
-          <tr><td colspan="5" class="muted">Loading…</td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    <div class="section-divider"></div>
-
-    <div class="board-head tiny">
-      <div class="board-title small-title">REVISIT BOOKING TODAY</div>
-      <div class="board-sub" id="revisitMeta">—</div>
-    </div>
-
-    <div class="table-wrap" id="revisitWrap">
-      <table class="table">
-        <thead>
-          <tr>
-            <th>STATUS</th>
-            <th>NAME</th>
-            <th>CAR MODEL</th>
-            <th>CAR COLOR</th>
-          </tr>
-        </thead>
-        <tbody id="revisitBody">
-          <tr><td colspan="4" class="muted">Loading…</td></tr>
-        </tbody>
-      </table>
-    </div>
-
-  </aside>
-
-</main>
-
-<script src="./script.js?v=11"></script>
+  <script src="script.js"></script>
 </body>
 </html>
