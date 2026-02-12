@@ -1,11 +1,7 @@
 (function(){
 
-/* ====== DEBUG ON SCREEN ====== */
 var debugBox = document.getElementById("debugBox");
-function debug(msg){
-  if (!debugBox) return;
-  debugBox.textContent = msg;
-}
+function debug(msg){ if (debugBox) debugBox.textContent = msg; }
 window.onerror = function(message, source, lineno, colno){
   debug("JS ERROR: " + message + " @ " + lineno + ":" + colno);
   return false;
@@ -13,13 +9,16 @@ window.onerror = function(message, source, lineno, colno){
 debug("JS loaded ✓");
 
 /* =========================
-   AUTO REFRESH: 6 HOURS
+   REFRESH TIMERS
+   - Page reload: every 6 hours
+   - IN PROGRESS: every 5 hours
+   - REVISIT: every 5 hours
 ========================= */
 setTimeout(function(){ location.reload(); }, 6 * 60 * 60 * 1000);
 
-/* =========================
-   XHR helpers
-========================= */
+var TABLE_REFRESH_MS = 5 * 60 * 60 * 1000; // 5 hours
+
+/* XHR */
 function xhr(url, cb){
   var r = new XMLHttpRequest();
   r.open("GET", url, true);
@@ -54,9 +53,7 @@ function parseCSV(t){
   return rows;
 }
 
-/* =========================
-   DATE/TIME + WEATHER (Cairo)
-========================= */
+/* Clock */
 function tickClock(){
   var d = new Date();
   function pad(n){ return n<10 ? "0"+n : ""+n; }
@@ -68,29 +65,23 @@ function tickClock(){
 setInterval(tickClock, 1000);
 tickClock();
 
+/* Weather */
 function loadWeather(){
   var el = document.getElementById("weatherCairo");
   if (!el) return;
-
   var url = "https://api.open-meteo.com/v1/forecast?latitude=30.0444&longitude=31.2357&current=temperature_2m";
   xhr(url + "&t=" + Date.now(), function(err, res){
-    if (err){ el.textContent="--"; debug("Weather: " + err); return; }
+    if (err){ el.textContent="--"; debug("Weather: "+err); return; }
     try{
       var j = JSON.parse(res);
       el.textContent = Math.round(j.current.temperature_2m) + "°C";
-      debug("Weather OK");
-    }catch(e){
-      el.textContent="--";
-      debug("Weather JSON error");
-    }
+    }catch(e){ el.textContent="--"; }
   });
 }
 loadWeather();
 setInterval(loadWeather, 10*60*1000);
 
-/* =========================
-   MEDIA PLAYER (stable)
-========================= */
+/* MEDIA */
 var MEDIA_PATH = "media/shared/";
 var MANIFEST_URL = MEDIA_PATH + "manifest.json";
 
@@ -102,25 +93,18 @@ var playlist = [];
 var idx = 0;
 var nextTimer = null;
 
-function setMediaStatus(t){
-  if (statusEl) statusEl.textContent = t || "";
-}
-function clearNext(){
-  if (nextTimer){ clearTimeout(nextTimer); nextTimer=null; }
-}
-function scheduleNext(ms){
-  clearNext();
-  nextTimer = setTimeout(playNext, ms);
-}
+function setMediaStatus(t){ if (statusEl) statusEl.textContent = t || ""; }
+function clearNext(){ if (nextTimer){ clearTimeout(nextTimer); nextTimer=null; } }
+function scheduleNext(ms){ clearNext(); nextTimer=setTimeout(playNext, ms); }
 
 function removeVideo(){
   if (!frame) return;
-  var v = frame.getElementsByTagName("video");
-  if (v && v[0]){
-    try{ v[0].pause(); }catch(_){}
-    try{ v[0].removeAttribute("src"); }catch(_){}
-    try{ v[0].load(); }catch(_){}
-    if (v[0].parentNode) v[0].parentNode.removeChild(v[0]);
+  var vids = frame.getElementsByTagName("video");
+  if (vids && vids[0]){
+    try{ vids[0].pause(); }catch(_){}
+    try{ vids[0].removeAttribute("src"); }catch(_){}
+    try{ vids[0].load(); }catch(_){}
+    if (vids[0].parentNode) vids[0].parentNode.removeChild(vids[0]);
   }
 }
 
@@ -129,62 +113,54 @@ function ensureOverlayImage(){
   if (img) return img;
   img = document.createElement("img");
   img.id = "mediaOverlayImage";
-  img.style.position = "absolute";
-  img.style.left = "0";
-  img.style.top = "0";
-  img.style.right = "0";
-  img.style.bottom = "0";
-  img.style.width = "100%";
-  img.style.height = "100%";
-  img.style.objectFit = "contain";
-  img.style.background = "#000";
-  img.style.opacity = "0";
-  img.style.transition = "opacity 600ms ease";
+  img.style.position="absolute";
+  img.style.left="0"; img.style.top="0"; img.style.right="0"; img.style.bottom="0";
+  img.style.width="100%"; img.style.height="100%";
+  img.style.objectFit="contain";
+  img.style.background="#000";
+  img.style.opacity="0";
+  img.style.transition="opacity 600ms ease";
   frame.appendChild(img);
   return img;
 }
 
-function showBanner(){
-  if (bannerBase) bannerBase.style.display = "block";
-}
+function showBanner(){ if (bannerBase) bannerBase.style.display="block"; }
 
 function playImage(src, durationSec){
   removeVideo();
   showBanner();
   var overlay = ensureOverlayImage();
-  overlay.style.opacity = "0";
-  overlay.src = "";
+  overlay.style.opacity="0";
+  overlay.src="";
 
   var dur = (durationSec || 15) * 1000;
   if (dur < 3000) dur = 3000;
 
   setMediaStatus("Loading image…");
-  debug("IMG: " + src);
 
-  var done = false;
-  var hang = setTimeout(function(){
-    if (done) return;
-    done = true;
+  var done=false;
+  var hang=setTimeout(function(){
+    if(done) return;
+    done=true;
     setMediaStatus("Image timeout, skipping…");
-    overlay.style.opacity = "0";
+    overlay.style.opacity="0";
     scheduleNext(900);
   }, 10000);
 
-  overlay.onload = function(){
-    if (done) return;
-    done = true;
+  overlay.onload=function(){
+    if(done) return;
+    done=true;
     clearTimeout(hang);
     setMediaStatus("");
-    overlay.style.opacity = "1";
+    overlay.style.opacity="1";
     scheduleNext(dur);
   };
-
-  overlay.onerror = function(){
-    if (done) return;
-    done = true;
+  overlay.onerror=function(){
+    if(done) return;
+    done=true;
     clearTimeout(hang);
     setMediaStatus("Image failed, skipping…");
-    overlay.style.opacity = "0";
+    overlay.style.opacity="0";
     scheduleNext(900);
   };
 
@@ -194,42 +170,36 @@ function playImage(src, durationSec){
 function playVideo(src){
   showBanner();
   var overlay = ensureOverlayImage();
-  overlay.style.opacity = "0";
+  overlay.style.opacity="0";
   removeVideo();
 
   setMediaStatus("Loading video…");
-  debug("VID: " + src);
 
-  var v = document.createElement("video");
+  var v=document.createElement("video");
   v.src = MEDIA_PATH + src + "?t=" + Date.now();
-  v.autoplay = true;
-  v.muted = true;
-  v.playsInline = true;
-  v.preload = "auto";
+  v.autoplay=true;
+  v.muted=true;
+  v.playsInline=true;
+  v.preload="auto";
   v.setAttribute("webkit-playsinline","true");
   v.setAttribute("playsinline","true");
 
-  v.style.position = "absolute";
-  v.style.left = "0";
-  v.style.top = "0";
-  v.style.right = "0";
-  v.style.bottom = "0";
-  v.style.width = "100%";
-  v.style.height = "100%";
-  v.style.objectFit = "cover";
-  v.style.background = "#000";
+  v.style.position="absolute";
+  v.style.left="0"; v.style.top="0"; v.style.right="0"; v.style.bottom="0";
+  v.style.width="100%"; v.style.height="100%";
+  v.style.objectFit="cover";
+  v.style.background="#000";
 
   frame.appendChild(v);
 
-  var started = false;
-  var lastT = -1;
-  var stallAt = Date.now();
+  var started=false;
+  var lastT=-1;
+  var stallAt=Date.now();
 
-  var firstFrameTimer = setTimeout(function(){
-    if (!started){
+  var firstFrameTimer=setTimeout(function(){
+    if(!started){
       setMediaStatus("Video can't start, skipping…");
-      removeVideo();
-      showBanner();
+      removeVideo(); showBanner();
       scheduleNext(1200);
     }
   }, 20000);
@@ -237,65 +207,51 @@ function playVideo(src){
   function failVideo(msg){
     clearTimeout(firstFrameTimer);
     setMediaStatus(msg || "Video error, skipping…");
-    removeVideo();
-    showBanner();
+    removeVideo(); showBanner();
     scheduleNext(1200);
   }
 
-  v.ontimeupdate = function(){
-    if (v.currentTime !== lastT){
-      lastT = v.currentTime;
-      started = true;
-      stallAt = Date.now();
+  v.ontimeupdate=function(){
+    if(v.currentTime !== lastT){
+      lastT=v.currentTime;
+      started=true;
+      stallAt=Date.now();
       setMediaStatus("");
-      if (bannerBase) bannerBase.style.display = "none";
+      if(bannerBase) bannerBase.style.display="none";
     }
-    if (Date.now() - stallAt > 25000){
+    if(Date.now()-stallAt > 25000){
       failVideo("Video froze, skipping…");
     }
   };
 
-  v.onended = function(){
+  v.onended=function(){
     clearTimeout(firstFrameTimer);
-    showBanner();
-    removeVideo();
+    showBanner(); removeVideo();
     scheduleNext(600);
   };
-
-  v.onerror = function(){ failVideo("Video error, skipping…"); };
-  v.onwaiting = function(){ showBanner(); setMediaStatus("Buffering…"); };
+  v.onerror=function(){ failVideo("Video error, skipping…"); };
+  v.onwaiting=function(){ showBanner(); setMediaStatus("Buffering…"); };
 
   try{
-    var p = v.play();
-    if (p && p.catch){ p.catch(function(){ failVideo("Autoplay blocked"); }); }
-  }catch(e){
-    failVideo("Play failed");
-  }
+    var p=v.play();
+    if(p && p.catch){ p.catch(function(){ failVideo("Autoplay blocked"); }); }
+  }catch(e){ failVideo("Play failed"); }
 }
 
 function playNext(){
   clearNext();
-
-  if (!playlist.length){
+  if(!playlist.length){
     showBanner();
     setMediaStatus("No media found (manifest empty)");
-    debug("Manifest items: 0");
     return;
   }
+  var item=playlist[idx];
+  idx=(idx+1) % playlist.length;
 
-  var item = playlist[idx];
-  idx = (idx + 1) % playlist.length;
+  if(!item || !item.type || !item.src){ scheduleNext(600); return; }
 
-  if (!item || !item.type || !item.src){
-    scheduleNext(600);
-    return;
-  }
-
-  showBanner();
-  removeVideo();
-
-  if (item.type === "image") return playImage(item.src, item.duration || 15);
-  if (item.type === "video") return playVideo(item.src);
+  if(item.type==="image") return playImage(item.src, item.duration || 15);
+  if(item.type==="video") return playVideo(item.src);
 
   scheduleNext(600);
 }
@@ -303,222 +259,179 @@ function playNext(){
 function loadManifest(){
   showBanner();
   setMediaStatus("Loading media…");
-  debug("Loading manifest…");
-
   xhr(MANIFEST_URL + "?t=" + Date.now(), function(err, res){
-    if (err){
-      setMediaStatus("Manifest offline (" + err + ")");
-      debug("Manifest error: " + err);
+    if(err){
+      setMediaStatus("Manifest offline ("+err+")");
       scheduleNext(5000);
       return;
     }
     try{
-      var j = JSON.parse(res);
-      playlist = (j && j.items) ? j.items : [];
-      idx = 0;
-      debug("Manifest OK, items: " + playlist.length);
+      var j=JSON.parse(res);
+      playlist=(j && j.items) ? j.items : [];
+      idx=0;
       playNext();
     }catch(e){
       setMediaStatus("Manifest JSON error");
-      debug("Manifest JSON error");
     }
   });
 }
 loadManifest();
 
-/* =========================
-   TABLES — TV SAFE pagination
-========================= */
+/* TABLES */
 var CSV_PROGRESS =
 "https://docs.google.com/spreadsheets/d/e/2PACX-1vSKpulVdyocoyi3Vj-BHBG9aOcfsG-QkgLtwlLGjbWFy_YkTmiN5mOsiYfWS6_sqLNtS4hCie2c3JDH/pub?gid=2111665249&single=true&output=csv";
 
 var CSV_REVISIT =
 "https://docs.google.com/spreadsheets/d/e/2PACX-1vSKpulVdyocoyi3Vj-BHBG9aOcfsG-QkgLtwlLGjbWFy_YkTmiN5mOsiYfWS6_sqLNtS4hCie2c3JDH/pub?gid=1236474828&single=true&output=csv";
 
-var progressBody = document.getElementById("progressBody");
-var revisitBody  = document.getElementById("revisitBody");
-var boardMeta    = document.getElementById("boardMeta");
-var revisitMeta  = document.getElementById("revisitMeta");
+var progressBody=document.getElementById("progressBody");
+var revisitBody=document.getElementById("revisitBody");
+var boardMeta=document.getElementById("boardMeta");
+var revisitMeta=document.getElementById("revisitMeta");
 
-var progressData = [];
-var revisitData  = [];
-var progressPage = 0;
-var revisitPage  = 0;
-
-var PROGRESS_ROWS_PER_PAGE = 10;
-var REVISIT_ROWS_PER_PAGE  = 8;
-var PAGE_SWITCH_MS = 4000;
-
-var progressTimer = null;
-var revisitTimer  = null;
+var progressData=[], revisitData=[];
+var progressPage=0, revisitPage=0;
+var PROGRESS_ROWS_PER_PAGE=10, REVISIT_ROWS_PER_PAGE=8, PAGE_SWITCH_MS=4000;
+var progressTimer=null, revisitTimer=null;
 
 function stopPaging(){
-  if (progressTimer){ clearInterval(progressTimer); progressTimer=null; }
-  if (revisitTimer){ clearInterval(revisitTimer); revisitTimer=null; }
+  if(progressTimer){clearInterval(progressTimer); progressTimer=null;}
+  if(revisitTimer){clearInterval(revisitTimer); revisitTimer=null;}
 }
-
 function renderProgress(){
-  if (!progressBody) return;
-  if (!progressData.length){
-    progressBody.innerHTML = '<tr><td colspan="5" class="muted">No cars in progress</td></tr>';
-    if (boardMeta) boardMeta.textContent = "Live · 0";
+  if(!progressBody) return;
+  if(!progressData.length){
+    progressBody.innerHTML='<tr><td colspan="5" class="muted">No cars in progress</td></tr>';
+    if(boardMeta) boardMeta.textContent="Live · 0";
     return;
   }
-  var pages = Math.ceil(progressData.length / PROGRESS_ROWS_PER_PAGE);
-  if (progressPage >= pages) progressPage = 0;
+  var pages=Math.ceil(progressData.length/PROGRESS_ROWS_PER_PAGE);
+  if(progressPage>=pages) progressPage=0;
+  var start=progressPage*PROGRESS_ROWS_PER_PAGE;
+  var slice=progressData.slice(start,start+PROGRESS_ROWS_PER_PAGE);
 
-  var start = progressPage * PROGRESS_ROWS_PER_PAGE;
-  var end = start + PROGRESS_ROWS_PER_PAGE;
-  var slice = progressData.slice(start, end);
-
-  var html = "";
-  for (var i=0;i<slice.length;i++){
-    var r = slice[i];
-    html += "<tr>"
-      + "<td>"+esc(r.customer)+"</td>"
-      + "<td>"+esc(r.model)+"</td>"
-      + "<td>"+esc(r.year)+"</td>"
-      + "<td>"+esc(r.chassis)+"</td>"
-      + "<td>"+esc(r.film)+"</td>"
-      + "</tr>";
+  var html="";
+  for(var i=0;i<slice.length;i++){
+    var r=slice[i];
+    html+="<tr><td>"+esc(r.customer)+"</td><td>"+esc(r.model)+"</td><td>"+esc(r.year)+"</td><td>"+esc(r.chassis)+"</td><td>"+esc(r.film)+"</td></tr>";
   }
-  progressBody.innerHTML = html;
-  if (boardMeta) boardMeta.textContent = "Live · " + progressData.length + " · Page " + (progressPage+1) + "/" + pages;
+  progressBody.innerHTML=html;
+  if(boardMeta) boardMeta.textContent="Live · "+progressData.length+" · Page "+(progressPage+1)+"/"+pages;
   progressPage++;
 }
-
 function renderRevisit(){
-  if (!revisitBody) return;
-  if (!revisitData.length){
-    revisitBody.innerHTML = '<tr><td colspan="4" class="muted">No bookings today</td></tr>';
-    if (revisitMeta) revisitMeta.textContent = "Live · 0";
+  if(!revisitBody) return;
+  if(!revisitData.length){
+    revisitBody.innerHTML='<tr><td colspan="4" class="muted">No bookings today</td></tr>';
+    if(revisitMeta) revisitMeta.textContent="Live · 0";
     return;
   }
-  var pages = Math.ceil(revisitData.length / REVISIT_ROWS_PER_PAGE);
-  if (revisitPage >= pages) revisitPage = 0;
+  var pages=Math.ceil(revisitData.length/REVISIT_ROWS_PER_PAGE);
+  if(revisitPage>=pages) revisitPage=0;
+  var start=revisitPage*REVISIT_ROWS_PER_PAGE;
+  var slice=revisitData.slice(start,start+REVISIT_ROWS_PER_PAGE);
 
-  var start = revisitPage * REVISIT_ROWS_PER_PAGE;
-  var end = start + REVISIT_ROWS_PER_PAGE;
-  var slice = revisitData.slice(start, end);
-
-  var html = "";
-  for (var i=0;i<slice.length;i++){
-    var r = slice[i];
-    html += "<tr>"
-      + "<td>"+esc(r.status)+"</td>"
-      + "<td>"+esc(r.name)+"</td>"
-      + "<td>"+esc(r.car)+"</td>"
-      + "<td>"+esc(r.color)+"</td>"
-      + "</tr>";
+  var html="";
+  for(var i=0;i<slice.length;i++){
+    var r=slice[i];
+    html+="<tr><td>"+esc(r.status)+"</td><td>"+esc(r.name)+"</td><td>"+esc(r.car)+"</td><td>"+esc(r.color)+"</td></tr>";
   }
-  revisitBody.innerHTML = html;
-  if (revisitMeta) revisitMeta.textContent = "Live · " + revisitData.length + " · Page " + (revisitPage+1) + "/" + pages;
+  revisitBody.innerHTML=html;
+  if(revisitMeta) revisitMeta.textContent="Live · "+revisitData.length+" · Page "+(revisitPage+1)+"/"+pages;
   revisitPage++;
 }
-
 function startPaging(){
   stopPaging();
-  renderProgress();
-  renderRevisit();
-  progressTimer = setInterval(renderProgress, PAGE_SWITCH_MS);
-  revisitTimer  = setInterval(renderRevisit, PAGE_SWITCH_MS);
+  renderProgress(); renderRevisit();
+  progressTimer=setInterval(renderProgress, PAGE_SWITCH_MS);
+  revisitTimer=setInterval(renderRevisit, PAGE_SWITCH_MS);
 }
 
 function loadProgress(){
-  if (boardMeta) boardMeta.textContent = "Loading…";
-  if (progressBody) progressBody.innerHTML = '<tr><td colspan="5" class="muted">...Loading</td></tr>';
-
-  xhr(CSV_PROGRESS + "&t=" + Date.now(), function(err, res){
-    if (err){
-      progressData = [];
-      if (progressBody) progressBody.innerHTML = '<tr><td colspan="5" class="muted">Offline</td></tr>';
-      if (boardMeta) boardMeta.textContent = "Offline";
-      debug("Progress: " + err);
+  if(boardMeta) boardMeta.textContent="Loading…";
+  if(progressBody) progressBody.innerHTML='<tr><td colspan="5" class="muted">...Loading</td></tr>';
+  xhr(CSV_PROGRESS+"&t="+Date.now(), function(err,res){
+    if(err){
+      progressData=[];
+      if(progressBody) progressBody.innerHTML='<tr><td colspan="5" class="muted">Offline</td></tr>';
+      if(boardMeta) boardMeta.textContent="Offline";
       return;
     }
-
     try{
-      var rows = parseCSV(res).slice(1);
-      var data = [];
-      for (var i=0;i<rows.length;i++){
-        var r = rows[i];
-        var customer = (r[4]  || "").trim(); // E
-        var model    = (r[6]  || "").trim(); // G
-        var year     = (r[8]  || "").trim(); // I
-        var chassis  = (r[9]  || "").trim(); // J
-        var film     = (r[10] || "").trim(); // K
-        if (!customer) continue;
-
+      var rows=parseCSV(res).slice(1);
+      var data=[];
+      for(var i=0;i<rows.length;i++){
+        var r=rows[i];
+        var customer=(r[4]||"").trim(); // E
+        var model=(r[6]||"").trim();    // G
+        var year=(r[8]||"").trim();     // I
+        var chassis=(r[9]||"").trim();  // J
+        var film=(r[10]||"").trim();    // K
+        if(!customer) continue;
         data.push({customer:customer, model:model, year:year, chassis:chassis, film:film});
       }
-      progressData = data;
-      progressPage = 0;
-      debug("Progress OK rows=" + progressData.length);
+      progressData=data; progressPage=0;
       startPaging();
+      debug("Progress OK rows=" + progressData.length);
     }catch(e){
-      progressData = [];
-      if (progressBody) progressBody.innerHTML = '<tr><td colspan="5" class="muted">Error</td></tr>';
-      if (boardMeta) boardMeta.textContent = "Error";
-      debug("Progress parse error");
+      progressData=[];
+      if(progressBody) progressBody.innerHTML='<tr><td colspan="5" class="muted">Error</td></tr>';
+      if(boardMeta) boardMeta.textContent="Error";
     }
   });
 }
 
 function loadRevisit(){
-  if (revisitMeta) revisitMeta.textContent = "Loading…";
-  if (revisitBody) revisitBody.innerHTML = '<tr><td colspan="4" class="muted">...Loading</td></tr>';
-
-  xhr(CSV_REVISIT + "&t=" + Date.now(), function(err, res){
-    if (err){
-      revisitData = [];
-      if (revisitBody) revisitBody.innerHTML = '<tr><td colspan="4" class="muted">Offline</td></tr>';
-      if (revisitMeta) revisitMeta.textContent = "Offline";
-      debug("Revisit: " + err);
+  if(revisitMeta) revisitMeta.textContent="Loading…";
+  if(revisitBody) revisitBody.innerHTML='<tr><td colspan="4" class="muted">...Loading</td></tr>';
+  xhr(CSV_REVISIT+"&t="+Date.now(), function(err,res){
+    if(err){
+      revisitData=[];
+      if(revisitBody) revisitBody.innerHTML='<tr><td colspan="4" class="muted">Offline</td></tr>';
+      if(revisitMeta) revisitMeta.textContent="Offline";
       return;
     }
-
     try{
-      var rows = parseCSV(res).slice(1);
-      var data = [];
-      for (var i=0;i<rows.length;i++){
-        var r = rows[i];
-        var status = (r[0] || "").trim(); // A
-        var name   = (r[3] || "").trim(); // D
-        var car    = (r[5] || "").trim(); // F
-        var color  = (r[6] || "").trim(); // G
-        if (!name) continue;
-
+      var rows=parseCSV(res).slice(1);
+      var data=[];
+      for(var i=0;i<rows.length;i++){
+        var r=rows[i];
+        var status=(r[0]||"").trim(); // A
+        var name=(r[3]||"").trim();   // D
+        var car=(r[5]||"").trim();    // F
+        var color=(r[6]||"").trim();  // G
+        if(!name) continue;
         data.push({status:status, name:name, car:car, color:color});
       }
-      revisitData = data;
-      revisitPage = 0;
-      debug("Revisit OK rows=" + revisitData.length);
+      revisitData=data; revisitPage=0;
       startPaging();
+      debug("Revisit OK rows=" + revisitData.length);
     }catch(e){
-      revisitData = [];
-      if (revisitBody) revisitBody.innerHTML = '<tr><td colspan="4" class="muted">Error</td></tr>';
-      if (revisitMeta) revisitMeta.textContent = "Error";
-      debug("Revisit parse error");
+      revisitData=[];
+      if(revisitBody) revisitBody.innerHTML='<tr><td colspan="4" class="muted">Error</td></tr>';
+      if(revisitMeta) revisitMeta.textContent="Error";
     }
   });
 }
 
-var refreshBtn = document.getElementById("refreshBtn");
-if (refreshBtn){
-  refreshBtn.onclick = function(){
-    debug("Manual refresh…");
+var refreshBtn=document.getElementById("refreshBtn");
+if(refreshBtn){
+  refreshBtn.onclick=function(){
     loadManifest();
     loadProgress();
     loadRevisit();
   };
 }
 
-/* Initial load */
+/* initial load */
 loadProgress();
 loadRevisit();
 
-/* Refresh tables every 30s */
-setInterval(loadProgress, 30000);
-setInterval(loadRevisit, 30000);
+/* refresh tables every 5 hours (as requested) */
+setInterval(loadProgress, TABLE_REFRESH_MS);
+setInterval(loadRevisit, TABLE_REFRESH_MS);
+
+/* Keep paging running smoothly (TV safe) */
+startPaging();
 
 })();
