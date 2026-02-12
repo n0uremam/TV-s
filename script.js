@@ -1,393 +1,6 @@
-(function(){
-
 /* =========================
-   AUTO REFRESH: 6 HOURS
-========================= */
-setTimeout(function(){ location.reload(); }, 6 * 60 * 60 * 1000);
-
-/* =========================
-   XHR helpers
-========================= */
-function xhr(url, cb){
-  var r = new XMLHttpRequest();
-  r.open("GET", url, true);
-  r.timeout = 25000;
-  r.onload = function(){
-    if (r.status >= 200 && r.status < 300) cb(null, r.responseText);
-    else cb("HTTP " + r.status);
-  };
-  r.onerror = r.ontimeout = function(){ cb("NETWORK/TIMEOUT"); };
-  r.send();
-}
-
-function esc(s){
-  s = (s === undefined || s === null) ? "" : String(s);
-  return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
-}
-
-function parseCSV(t){
-  var rows=[], row=[];
-  var cur="", q=false;
-  for (var i=0;i<t.length;i++){
-    var c=t[i], n=t[i+1];
-    if (c=='"' && q && n=='"'){ cur+='"'; i++; }
-    else if (c=='"'){ q=!q; }
-    else if (c=="," && !q){ row.push(cur); cur=""; }
-    else if ((c=="\n"||c=="\r") && !q){
-      if (cur || row.length){ row.push(cur); rows.push(row.slice()); }
-      row.length=0; cur="";
-    } else cur += c;
-  }
-  if (cur || row.length){ row.push(cur); rows.push(row); }
-  return rows;
-}
-
-/* =========================
-   DATE/TIME + WEATHER (Cairo)
-========================= */
-function tickClock(){
-  var d = new Date();
-  function pad(n){ return n<10 ? "0"+n : ""+n; }
-  var timeEl = document.getElementById("timeLocal");
-  var dateEl = document.getElementById("dateLocal");
-  if (timeEl) timeEl.textContent = pad(d.getHours())+":"+pad(d.getMinutes())+":"+pad(d.getSeconds());
-  if (dateEl) dateEl.textContent = d.toDateString();
-}
-setInterval(tickClock, 1000);
-tickClock();
-
-function loadWeather(){
-  var url = "https://api.open-meteo.com/v1/forecast?latitude=30.0444&longitude=31.2357&current=temperature_2m";
-  xhr(url + "&t=" + Date.now(), function(err, res){
-    var el = document.getElementById("weatherCairo");
-    if (!el) return;
-    if (err){ el.textContent="--"; return; }
-    try{
-      var j = JSON.parse(res);
-      el.textContent = Math.round(j.current.temperature_2m) + "°C";
-    }catch(e){
-      el.textContent="--";
-    }
-  });
-}
-loadWeather();
-setInterval(loadWeather, 10*60*1000);
-
-/* =========================
-   MEDIA PLAYER — FIX IMAGE HANG
-========================= */
-var MEDIA_PATH = "media/shared/";
-var MANIFEST_URL = MEDIA_PATH + "manifest.json";
-var frame = document.getElementById("mediaFrame");
-var statusEl = document.getElementById("mediaStatus");
-var bannerBase = document.getElementById("mediaFallbackBanner");
-
-var playlist = [];
-var idx = 0;
-
-var nextTimer = null;
-var failCount = 0;
-
-var IMAGE_HANG_TIMEOUT_MS = 10000;
-var VIDEO_FIRSTFRAME_TIMEOUT_MS = 20000;
-var VIDEO_STALL_MS = 25000;
-
-function setStatus(t){ if (statusEl) statusEl.textContent = t || ""; }
-function clearNext(){ if (nextTimer){ clearTimeout(nextTimer); nextTimer=null; } }
-function scheduleNext(ms){ clearNext(); nextTimer = setTimeout(playNext, ms); }
-
-function removeVideo(){
-  var v = frame ? frame.querySelector("video") : null;
-  if (v){
-    try{ v.pause(); }catch(_){}
-    try{ v.removeAttribute("src"); }catch(_){}
-    try{ v.load(); }catch(_){}
-    if (v.parentNode) v.parentNode.removeChild(v);
-  }
-}
-
-function ensureOverlayImage(){
-  var img = document.getElementById("mediaOverlayImage");
-  if (img) return img;
-
-  img = document.createElement("img");
-  img.id = "mediaOverlayImage";
-  img.alt = "media";
-  img.style.position = "absolute";
-  img.style.inset = "0";
-  img.style.width = "100%";
-  img.style.height = "100%";
-  img.style.objectFit = "contain";
-  img.style.background = "#000";
-  img.style.opacity = "0";
-  img.style.transition = "opacity 600ms ease";
-  img.style.display = "block";
-  frame.appendChild(img);
-  return img;
-}
-
-function showBannerBase(){
-  if (bannerBase){
-    bannerBase.style.display = "block";
-    bannerBase.style.opacity = "1";
-  }
-}
-
-function hardResetIfNeeded(){
-  if (failCount >= 4){
-    setStatus("System recovering…");
-    setTimeout(function(){ location.reload(); }, 1500);
-  }
-}
-
-function playImage(src, seconds){
-  removeVideo();
-  showBannerBase();
-
-  var overlay = ensureOverlayImage();
-  overlay.style.opacity = "0";
-  overlay.src = "";
-
-  var dur = (seconds || 15) * 1000;
-  if (dur < 3000) dur = 3000;
-
-  setStatus("Loading image…");
-
-  var done = false;
-  var hangTimer = setTimeout(function(){
-    if (done) return;
-    done = true;
-    failCount++;
-    setStatus("Image timeout, skipping…");
-    overlay.style.opacity = "0";
-    hardResetIfNeeded();
-    scheduleNext(1200);
-  }, IMAGE_HANG_TIMEOUT_MS);
-
-  overlay.onload = function(){
-    if (done) return;
-    done = true;
-    clearTimeout(hangTimer);
-    failCount = 0;
-    setStatus("");
-    overlay.style.opacity = "1";
-    scheduleNext(dur);
-  };
-
-  overlay.onerror = function(){
-    if (done) return;
-    done = true;
-    clearTimeout(hangTimer);
-    failCount++;
-    setStatus("Image failed, skipping…");
-    overlay.style.opacity = "0";
-    hardResetIfNeeded();
-    scheduleNext(1200);
-  };
-
-  overlay.src = MEDIA_PATH + src + "?t=" + Date.now();
-}
-
-function playVideo(src){
-  showBannerBase();
-  var overlay = ensureOverlayImage();
-  overlay.style.opacity = "0";
-  removeVideo();
-  setStatus("Loading video…");
-
-  var v = document.createElement("video");
-  v.src = MEDIA_PATH + src + "?t=" + Date.now();
-  v.autoplay = true;
-  v.muted = true;
-  v.playsInline = true;
-  v.preload = "auto";
-  v.setAttribute("webkit-playsinline","true");
-  v.setAttribute("playsinline","true");
-
-  v.style.position = "absolute";
-  v.style.inset = "0";
-  v.style.width = "100%";
-  v.style.height = "100%";
-  v.style.objectFit = "cover";
-  v.style.background = "#000";
-
-  frame.appendChild(v);
-
-  var startedFrames = false;
-  var lastTime = -1;
-  var stallStart = Date.now();
-
-  var firstFrameTimer = setTimeout(function(){
-    if (!startedFrames){
-      failCount++;
-      setStatus("Video can't start, skipping…");
-      removeVideo();
-      hardResetIfNeeded();
-      scheduleNext(1500);
-    }
-  }, VIDEO_FIRSTFRAME_TIMEOUT_MS);
-
-  function failVideo(msg){
-    clearTimeout(firstFrameTimer);
-    failCount++;
-    setStatus(msg || "Video error, skipping…");
-    removeVideo();
-    showBannerBase();
-    hardResetIfNeeded();
-    scheduleNext(1500);
-  }
-
-  v.onplaying = function(){ setStatus("Playing…"); stallStart = Date.now(); };
-
-  v.ontimeupdate = function(){
-    if (v.currentTime !== lastTime){
-      lastTime = v.currentTime;
-      startedFrames = true;
-      failCount = 0;
-      setStatus("");
-      if (bannerBase) bannerBase.style.display = "none";
-      stallStart = Date.now();
-    }
-    if (Date.now() - stallStart > VIDEO_STALL_MS){
-      failVideo("Video froze, skipping…");
-    }
-  };
-
-  v.onwaiting = function(){ showBannerBase(); setStatus("Buffering…"); };
-  v.onstalled = function(){ showBannerBase(); setStatus("Stalled…"); };
-  v.onerror = function(){ failVideo("Video error, skipping…"); };
-
-  v.onended = function(){
-    clearTimeout(firstFrameTimer);
-    showBannerBase();
-    removeVideo();
-    scheduleNext(500);
-  };
-
-  try{
-    var p = v.play();
-    if (p && p.catch){
-      p.catch(function(){ failVideo("Autoplay blocked, skipping…"); });
-    }
-  }catch(e){
-    failVideo("Play failed, skipping…");
-  }
-}
-
-function playNext(){
-  clearNext();
-
-  if (!playlist.length){
-    showBannerBase();
-    setStatus("No media in manifest");
-    return;
-  }
-
-  var item = playlist[idx];
-  idx = (idx + 1) % playlist.length;
-
-  if (!item || !item.type || !item.src){
-    scheduleNext(600);
-    return;
-  }
-
-  showBannerBase();
-  removeVideo();
-
-  if (item.type === "image") return playImage(item.src, item.duration || 15);
-  if (item.type === "video") return playVideo(item.src);
-
-  scheduleNext(600);
-}
-
-function loadManifest(){
-  showBannerBase();
-  setStatus("Loading media…");
-  xhr(MANIFEST_URL + "?t=" + Date.now(), function(err, res){
-    if (err){
-      setStatus("Manifest offline");
-      scheduleNext(5000);
-      return;
-    }
-    try{
-      var json = JSON.parse(res);
-      playlist = (json && json.items) ? json.items : [];
-      if (!playlist.length){
-        setStatus("No media found");
-        return;
-      }
-      idx = 0;
-      failCount = 0;
-      playNext();
-    }catch(e){
-      setStatus("Manifest JSON error");
-    }
-  });
-}
-loadManifest();
-
-/* =========================
-   AUTO-SCROLL (TV SAFE) using scrollTop
-   - Works on TVs that break CSS transform animations
-========================= */
-var scrollers = {}; // store per-wrap state
-
-function stopAutoScroll(wrapId){
-  var st = scrollers[wrapId];
-  if (!st) return;
-  if (st.timer) clearInterval(st.timer);
-  scrollers[wrapId] = null;
-}
-
-function startAutoScroll(wrapId){
-  stopAutoScroll(wrapId);
-
-  var wrap = document.getElementById(wrapId);
-  if (!wrap) return;
-
-  // IMPORTANT: enable scrollTop scrolling
-  wrap.style.overflowY = "hidden"; // hide native scrollbar
-  wrap.scrollTop = 0;
-
-  var dir = 1;          // 1 down, -1 up
-  var speed = 0.6;      // px per tick
-  var tickMs = 20;      // interval
-  var pauseMs = 1800;   // pause at top/bottom
-  var paused = false;
-
-  function maxScroll(){
-    return wrap.scrollHeight - wrap.clientHeight;
-  }
-
-  function step(){
-    if (paused) return;
-
-    var max = maxScroll();
-    if (max <= 2){
-      wrap.scrollTop = 0; // no need to scroll
-      return;
-    }
-
-    wrap.scrollTop = wrap.scrollTop + (dir * speed);
-
-    if (wrap.scrollTop >= max){
-      wrap.scrollTop = max;
-      paused = true;
-      setTimeout(function(){ dir = -1; paused = false; }, pauseMs);
-    } else if (wrap.scrollTop <= 0){
-      wrap.scrollTop = 0;
-      paused = true;
-      setTimeout(function(){ dir = 1; paused = false; }, pauseMs);
-    }
-  }
-
-  scrollers[wrapId] = {
-    timer: setInterval(step, tickMs)
-  };
-}
-
-/* =========================
-   TABLES
+   TABLES — TV SAFE (NO SCROLL)
+   We paginate rows instead of scrolling.
 ========================= */
 var CSV_PROGRESS =
 "https://docs.google.com/spreadsheets/d/e/2PACX-1vSKpulVdyocoyi3Vj-BHBG9aOcfsG-QkgLtwlLGjbWFy_YkTmiN5mOsiYfWS6_sqLNtS4hCie2c3JDH/pub?gid=2111665249&single=true&output=csv";
@@ -396,9 +9,108 @@ var CSV_REVISIT =
 "https://docs.google.com/spreadsheets/d/e/2PACX-1vSKpulVdyocoyi3Vj-BHBG9aOcfsG-QkgLtwlLGjbWFy_YkTmiN5mOsiYfWS6_sqLNtS4hCie2c3JDH/pub?gid=1236474828&single=true&output=csv";
 
 var progressBody = document.getElementById("progressBody");
-var revisitBody = document.getElementById("revisitBody");
-var boardMeta = document.getElementById("boardMeta");
-var revisitMeta = document.getElementById("revisitMeta");
+var revisitBody  = document.getElementById("revisitBody");
+var boardMeta    = document.getElementById("boardMeta");
+var revisitMeta  = document.getElementById("revisitMeta");
+
+var progressData = []; // array of {customer, model, year, chassis, film}
+var revisitData  = []; // array of {status, name, car, color}
+
+var progressPage = 0;
+var revisitPage  = 0;
+
+var progressPagerTimer = null;
+var revisitPagerTimer  = null;
+
+/* Tune these for TV */
+var PROGRESS_ROWS_PER_PAGE = 10;
+var REVISIT_ROWS_PER_PAGE  = 8;
+var PAGE_SWITCH_MS         = 4000; // switch page every 4 seconds
+
+function clearPagerTimers(){
+  if (progressPagerTimer) { clearInterval(progressPagerTimer); progressPagerTimer = null; }
+  if (revisitPagerTimer)  { clearInterval(revisitPagerTimer);  revisitPagerTimer  = null; }
+}
+
+function renderProgressPage(){
+  if (!progressBody) return;
+
+  if (!progressData.length){
+    progressBody.innerHTML = '<tr><td colspan="5" class="muted">No cars in progress</td></tr>';
+    if (boardMeta) boardMeta.textContent = "Live · 0";
+    return;
+  }
+
+  var totalPages = Math.ceil(progressData.length / PROGRESS_ROWS_PER_PAGE);
+  if (progressPage >= totalPages) progressPage = 0;
+
+  var start = progressPage * PROGRESS_ROWS_PER_PAGE;
+  var end   = start + PROGRESS_ROWS_PER_PAGE;
+  var slice = progressData.slice(start, end);
+
+  var html = "";
+  for (var i=0;i<slice.length;i++){
+    var r = slice[i];
+    html += "<tr>"
+      + "<td>"+esc(r.customer)+"</td>"
+      + "<td>"+esc(r.model)+"</td>"
+      + "<td>"+esc(r.year)+"</td>"
+      + "<td>"+esc(r.chassis)+"</td>"
+      + "<td>"+esc(r.film)+"</td>"
+      + "</tr>";
+  }
+
+  progressBody.innerHTML = html;
+
+  // show page counter for staff clarity
+  if (boardMeta) boardMeta.textContent = "Live · " + progressData.length + " · Page " + (progressPage+1) + "/" + totalPages;
+
+  progressPage++;
+}
+
+function renderRevisitPage(){
+  if (!revisitBody) return;
+
+  if (!revisitData.length){
+    revisitBody.innerHTML = '<tr><td colspan="4" class="muted">No bookings today</td></tr>';
+    if (revisitMeta) revisitMeta.textContent = "Live · 0";
+    return;
+  }
+
+  var totalPages = Math.ceil(revisitData.length / REVISIT_ROWS_PER_PAGE);
+  if (revisitPage >= totalPages) revisitPage = 0;
+
+  var start = revisitPage * REVISIT_ROWS_PER_PAGE;
+  var end   = start + REVISIT_ROWS_PER_PAGE;
+  var slice = revisitData.slice(start, end);
+
+  var html = "";
+  for (var i=0;i<slice.length;i++){
+    var r = slice[i];
+    html += "<tr>"
+      + "<td>"+esc(r.status)+"</td>"
+      + "<td>"+esc(r.name)+"</td>"
+      + "<td>"+esc(r.car)+"</td>"
+      + "<td>"+esc(r.color)+"</td>"
+      + "</tr>";
+  }
+
+  revisitBody.innerHTML = html;
+
+  if (revisitMeta) revisitMeta.textContent = "Live · " + revisitData.length + " · Page " + (revisitPage+1) + "/" + totalPages;
+
+  revisitPage++;
+}
+
+function startPagers(){
+  clearPagerTimers();
+  // render immediately
+  renderProgressPage();
+  renderRevisitPage();
+  // rotate pages
+  progressPagerTimer = setInterval(renderProgressPage, PAGE_SWITCH_MS);
+  revisitPagerTimer  = setInterval(renderRevisitPage,  PAGE_SWITCH_MS);
+}
 
 function loadProgress(){
   if (boardMeta) boardMeta.textContent = "Loading…";
@@ -406,14 +118,16 @@ function loadProgress(){
 
   xhr(CSV_PROGRESS + "&t=" + Date.now(), function(err, res){
     if (err){
+      progressData = [];
       if (progressBody) progressBody.innerHTML = '<tr><td colspan="5" class="muted">Offline</td></tr>';
       if (boardMeta) boardMeta.textContent = "Offline";
-      startAutoScroll("progressWrap"); // still attempt scroll
       return;
     }
+
     try{
       var rows = parseCSV(res).slice(1);
-      var html="", count=0;
+      var data = [];
+
       for (var i=0;i<rows.length;i++){
         var r = rows[i];
         var customer = (r[4]  || "").trim(); // E
@@ -421,26 +135,26 @@ function loadProgress(){
         var year     = (r[8]  || "").trim(); // I
         var chassis  = (r[9]  || "").trim(); // J
         var film     = (r[10] || "").trim(); // K
-        if (!customer) continue;
-        count++;
-        html += "<tr>"
-          + "<td>"+esc(customer)+"</td>"
-          + "<td>"+esc(model)+"</td>"
-          + "<td>"+esc(year)+"</td>"
-          + "<td>"+esc(chassis)+"</td>"
-          + "<td>"+esc(film)+"</td>"
-          + "</tr>";
-      }
-      if (!html) html = '<tr><td colspan="5" class="muted">No cars in progress</td></tr>';
-      if (progressBody) progressBody.innerHTML = html;
-      if (boardMeta) boardMeta.textContent = "Live · " + count;
 
-      // restart scroll after content changes
-      setTimeout(function(){ startAutoScroll("progressWrap"); }, 400);
+        if (!customer) continue;
+
+        data.push({
+          customer: customer,
+          model: model,
+          year: year,
+          chassis: chassis,
+          film: film
+        });
+      }
+
+      progressData = data;
+      progressPage = 0; // restart paging when data updates
+      startPagers();
+
     }catch(e){
+      progressData = [];
       if (progressBody) progressBody.innerHTML = '<tr><td colspan="5" class="muted">Error</td></tr>';
       if (boardMeta) boardMeta.textContent = "Error";
-      setTimeout(function(){ startAutoScroll("progressWrap"); }, 400);
     }
   });
 }
@@ -451,38 +165,41 @@ function loadRevisit(){
 
   xhr(CSV_REVISIT + "&t=" + Date.now(), function(err, res){
     if (err){
+      revisitData = [];
       if (revisitBody) revisitBody.innerHTML = '<tr><td colspan="4" class="muted">Offline</td></tr>';
       if (revisitMeta) revisitMeta.textContent = "Offline";
-      startAutoScroll("revisitWrap");
       return;
     }
+
     try{
       var rows = parseCSV(res).slice(1);
-      var html="", count=0;
+      var data = [];
+
       for (var i=0;i<rows.length;i++){
         var r = rows[i];
         var status = (r[0] || "").trim(); // A
         var name   = (r[3] || "").trim(); // D
         var car    = (r[5] || "").trim(); // F
         var color  = (r[6] || "").trim(); // G
-        if (!name) continue;
-        count++;
-        html += "<tr>"
-          + "<td>"+esc(status)+"</td>"
-          + "<td>"+esc(name)+"</td>"
-          + "<td>"+esc(car)+"</td>"
-          + "<td>"+esc(color)+"</td>"
-          + "</tr>";
-      }
-      if (!html) html = '<tr><td colspan="4" class="muted">No bookings today</td></tr>';
-      if (revisitBody) revisitBody.innerHTML = html;
-      if (revisitMeta) revisitMeta.textContent = "Live · " + count;
 
-      setTimeout(function(){ startAutoScroll("revisitWrap"); }, 400);
+        if (!name) continue;
+
+        data.push({
+          status: status,
+          name: name,
+          car: car,
+          color: color
+        });
+      }
+
+      revisitData = data;
+      revisitPage = 0;
+      startPagers();
+
     }catch(e){
+      revisitData = [];
       if (revisitBody) revisitBody.innerHTML = '<tr><td colspan="4" class="muted">Error</td></tr>';
       if (revisitMeta) revisitMeta.textContent = "Error";
-      setTimeout(function(){ startAutoScroll("revisitWrap"); }, 400);
     }
   });
 }
@@ -490,17 +207,13 @@ function loadRevisit(){
 var refreshBtn = document.getElementById("refreshBtn");
 if (refreshBtn) refreshBtn.onclick = function(){ loadProgress(); loadRevisit(); };
 
+// Initial load
 loadProgress();
 loadRevisit();
 
-// Refresh tables every 30s
-setInterval(loadProgress, 30000);
-setInterval(loadRevisit, 30000);
+// Refresh from Google Sheets every 30s
+setInterval(loadProgress, 100000);
+setInterval(loadRevisit, 100000);
 
-// Ensure scrolling starts even if first load is short
-setTimeout(function(){
-  startAutoScroll("progressWrap");
-  startAutoScroll("revisitWrap");
-}, 1500);
-
-})();
+// If data is already there, start pager anyway
+setTimeout(startPagers, 1500);
