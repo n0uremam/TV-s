@@ -9,14 +9,13 @@ window.onerror = function(message, source, lineno, colno){
 debug("JS loaded ✓");
 
 /* =========================
-   REFRESH TIMERS
-   - Page reload: every 6 hours
-   - IN PROGRESS: every 5 hours
-   - REVISIT: every 5 hours
+   LIVE UPDATE SETTINGS
+   - Tables refresh every 60s (live)
+   - Manifest refresh every 5 min (to catch new uploads)
+   - NO page reload
 ========================= */
-setTimeout(function(){ location.reload(); }, 6 * 60 * 60 * 1000);
-
-var TABLE_REFRESH_MS = 5 * 60 * 60 * 1000; // 5 hours
+var TABLE_REFRESH_MS = 60 * 1000;       // 1 minute (LIVE)
+var MANIFEST_REFRESH_MS = 5 * 60 * 1000; // 5 minutes
 
 /* XHR */
 function xhr(url, cb){
@@ -71,7 +70,7 @@ function loadWeather(){
   if (!el) return;
   var url = "https://api.open-meteo.com/v1/forecast?latitude=30.0444&longitude=31.2357&current=temperature_2m";
   xhr(url + "&t=" + Date.now(), function(err, res){
-    if (err){ el.textContent="--"; debug("Weather: "+err); return; }
+    if (err){ el.textContent="--"; return; }
     try{
       var j = JSON.parse(res);
       el.textContent = Math.round(j.current.temperature_2m) + "°C";
@@ -81,7 +80,9 @@ function loadWeather(){
 loadWeather();
 setInterval(loadWeather, 10*60*1000);
 
-/* MEDIA */
+/* =========================
+   MEDIA PLAYER
+========================= */
 var MEDIA_PATH = "media/shared/";
 var MANIFEST_URL = MEDIA_PATH + "manifest.json";
 
@@ -145,7 +146,7 @@ function playImage(src, durationSec){
     setMediaStatus("Image timeout, skipping…");
     overlay.style.opacity="0";
     scheduleNext(900);
-  }, 10000);
+  }, 12000);
 
   overlay.onload=function(){
     if(done) return;
@@ -202,7 +203,7 @@ function playVideo(src){
       removeVideo(); showBanner();
       scheduleNext(1200);
     }
-  }, 20000);
+  }, 25000);
 
   function failVideo(msg){
     clearTimeout(firstFrameTimer);
@@ -219,7 +220,7 @@ function playVideo(src){
       setMediaStatus("");
       if(bannerBase) bannerBase.style.display="none";
     }
-    if(Date.now()-stallAt > 25000){
+    if(Date.now()-stallAt > 30000){
       failVideo("Video froze, skipping…");
     }
   };
@@ -249,35 +250,41 @@ function playNext(){
   idx=(idx+1) % playlist.length;
 
   if(!item || !item.type || !item.src){ scheduleNext(600); return; }
-
   if(item.type==="image") return playImage(item.src, item.duration || 15);
   if(item.type==="video") return playVideo(item.src);
-
   scheduleNext(600);
 }
 
-function loadManifest(){
-  showBanner();
-  setMediaStatus("Loading media…");
+function loadManifest(silent){
+  if(!silent){ showBanner(); setMediaStatus("Loading media…"); }
   xhr(MANIFEST_URL + "?t=" + Date.now(), function(err, res){
     if(err){
-      setMediaStatus("Manifest offline ("+err+")");
-      scheduleNext(5000);
+      if(!silent) setMediaStatus("Manifest offline ("+err+")");
       return;
     }
     try{
       var j=JSON.parse(res);
-      playlist=(j && j.items) ? j.items : [];
-      idx=0;
-      playNext();
+      var items=(j && j.items) ? j.items : [];
+      // update only if changed
+      var changed = JSON.stringify(items) !== JSON.stringify(playlist);
+      if(changed){
+        playlist = items;
+        idx = 0;
+        if(!silent) playNext();
+        debug("Manifest updated items=" + playlist.length);
+      }
     }catch(e){
-      setMediaStatus("Manifest JSON error");
+      if(!silent) setMediaStatus("Manifest JSON error");
     }
   });
 }
-loadManifest();
 
-/* TABLES */
+loadManifest(false);
+setInterval(function(){ loadManifest(true); }, MANIFEST_REFRESH_MS);
+
+/* =========================
+   TABLES (LIVE)
+========================= */
 var CSV_PROGRESS =
 "https://docs.google.com/spreadsheets/d/e/2PACX-1vSKpulVdyocoyi3Vj-BHBG9aOcfsG-QkgLtwlLGjbWFy_YkTmiN5mOsiYfWS6_sqLNtS4hCie2c3JDH/pub?gid=2111665249&single=true&output=csv";
 
@@ -291,7 +298,12 @@ var revisitMeta=document.getElementById("revisitMeta");
 
 var progressData=[], revisitData=[];
 var progressPage=0, revisitPage=0;
-var PROGRESS_ROWS_PER_PAGE=10, REVISIT_ROWS_PER_PAGE=8, PAGE_SWITCH_MS=4000;
+
+/* Paging: show different rows without scrolling (TV safe) */
+var PROGRESS_ROWS_PER_PAGE=7;
+var REVISIT_ROWS_PER_PAGE=6;
+var PAGE_SWITCH_MS=3500;
+
 var progressTimer=null, revisitTimer=null;
 
 function stopPaging(){
@@ -340,6 +352,7 @@ function renderRevisit(){
   if(revisitMeta) revisitMeta.textContent="Live · "+revisitData.length+" · Page "+(revisitPage+1)+"/"+pages;
   revisitPage++;
 }
+
 function startPaging(){
   stopPaging();
   renderProgress(); renderRevisit();
@@ -348,12 +361,9 @@ function startPaging(){
 }
 
 function loadProgress(){
-  if(boardMeta) boardMeta.textContent="Loading…";
-  if(progressBody) progressBody.innerHTML='<tr><td colspan="5" class="muted">...Loading</td></tr>';
+  if(boardMeta) boardMeta.textContent="Updating…";
   xhr(CSV_PROGRESS+"&t="+Date.now(), function(err,res){
     if(err){
-      progressData=[];
-      if(progressBody) progressBody.innerHTML='<tr><td colspan="5" class="muted">Offline</td></tr>';
       if(boardMeta) boardMeta.textContent="Offline";
       return;
     }
@@ -370,24 +380,20 @@ function loadProgress(){
         if(!customer) continue;
         data.push({customer:customer, model:model, year:year, chassis:chassis, film:film});
       }
-      progressData=data; progressPage=0;
+      progressData=data;
+      progressPage=0;
       startPaging();
-      debug("Progress OK rows=" + progressData.length);
+      debug("Progress live rows=" + progressData.length);
     }catch(e){
-      progressData=[];
-      if(progressBody) progressBody.innerHTML='<tr><td colspan="5" class="muted">Error</td></tr>';
       if(boardMeta) boardMeta.textContent="Error";
     }
   });
 }
 
 function loadRevisit(){
-  if(revisitMeta) revisitMeta.textContent="Loading…";
-  if(revisitBody) revisitBody.innerHTML='<tr><td colspan="4" class="muted">...Loading</td></tr>';
+  if(revisitMeta) revisitMeta.textContent="Updating…";
   xhr(CSV_REVISIT+"&t="+Date.now(), function(err,res){
     if(err){
-      revisitData=[];
-      if(revisitBody) revisitBody.innerHTML='<tr><td colspan="4" class="muted">Offline</td></tr>';
       if(revisitMeta) revisitMeta.textContent="Offline";
       return;
     }
@@ -403,35 +409,32 @@ function loadRevisit(){
         if(!name) continue;
         data.push({status:status, name:name, car:car, color:color});
       }
-      revisitData=data; revisitPage=0;
+      revisitData=data;
+      revisitPage=0;
       startPaging();
-      debug("Revisit OK rows=" + revisitData.length);
+      debug("Revisit live rows=" + revisitData.length);
     }catch(e){
-      revisitData=[];
-      if(revisitBody) revisitBody.innerHTML='<tr><td colspan="4" class="muted">Error</td></tr>';
       if(revisitMeta) revisitMeta.textContent="Error";
     }
   });
 }
 
+/* Manual refresh */
 var refreshBtn=document.getElementById("refreshBtn");
 if(refreshBtn){
   refreshBtn.onclick=function(){
-    loadManifest();
+    loadManifest(false);
     loadProgress();
     loadRevisit();
   };
 }
 
-/* initial load */
+/* initial + LIVE auto refresh */
 loadProgress();
 loadRevisit();
+startPaging();
 
-/* refresh tables every 5 hours (as requested) */
 setInterval(loadProgress, TABLE_REFRESH_MS);
 setInterval(loadRevisit, TABLE_REFRESH_MS);
-
-/* Keep paging running smoothly (TV safe) */
-startPaging();
 
 })();
