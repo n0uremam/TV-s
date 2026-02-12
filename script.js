@@ -110,7 +110,7 @@
 
   // ===== LIVE UPDATE SETTINGS =====
   var TABLE_REFRESH_MS = 60 * 1000; // tables live refresh
-  var MANIFEST_REFRESH_MS = 5 * 60 * 1000; // manifest refresh
+var MANIFEST_REFRESH_MS = 3 * 60 * 60 * 1000; // manifest refresh every 3 hours
 
   // ===== MEDIA PLAYER =====
   var MEDIA_PATH = "media/shared/";
@@ -572,3 +572,4 @@
   debug("Ready ✓");
 
 })();
+
