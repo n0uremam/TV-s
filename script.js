@@ -238,7 +238,7 @@ var MANIFEST_REFRESH_MS = 3 * 60 * 60 * 1000; // manifest refresh every 3 hours
     var v = document.createElement("video");
     v.src = MEDIA_PATH + src + "?t=" + Date.now();
     v.autoplay = true;
-    v.muted = true;
+    v.muted = false;
     v.playsInline = true;
     v.preload = "auto";
     v.setAttribute("webkit-playsinline", "true");
@@ -572,4 +572,5 @@ var MANIFEST_REFRESH_MS = 3 * 60 * 60 * 1000; // manifest refresh every 3 hours
   debug("Ready ✓");
 
 })();
+
 
