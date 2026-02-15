@@ -389,7 +389,7 @@ var MANIFEST_REFRESH_MS = 3 * 60 * 60 * 1000; // manifest refresh every 3 hours
   var revisitPage = 0;
 
   // ✅ Added 2 more rows each
-  var PROGRESS_ROWS_PER_PAGE = 9; // was 7
+  var PROGRESS_ROWS_PER_PAGE = 8; // was 7
   var REVISIT_ROWS_PER_PAGE = 8;  // was 6
   var PAGE_SWITCH_MS = 3500;
 
@@ -572,5 +572,6 @@ var MANIFEST_REFRESH_MS = 3 * 60 * 60 * 1000; // manifest refresh every 3 hours
   debug("Ready ✓");
 
 })();
+
 
 
