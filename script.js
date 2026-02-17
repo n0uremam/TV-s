@@ -1,4 +1,4 @@
-// script.js
+// script.js  (YOUR BASE CODE + DATA SAVING + SYNC MEDIA TIMING ACROSS ALL TVs)
 (function () {
   "use strict";
 
@@ -70,6 +70,11 @@
     return rows;
   }
 
+  // ===== Data-saving compare helper =====
+  function sameData(a, b) {
+    return JSON.stringify(a) === JSON.stringify(b);
+  }
+
   // ===== Clock =====
   function tickClock() {
     var d = new Date();
@@ -92,7 +97,7 @@
     if (!el) return;
     var url =
       "https://api.open-meteo.com/v1/forecast?latitude=30.0444&longitude=31.2357&current=temperature_2m";
-    xhr(url + "&t=" + Date.now(), function (err, res) {
+    xhr(url, function (err, res) {
       if (err) {
         el.textContent = "--";
         return;
@@ -108,9 +113,9 @@
   loadWeather();
   setInterval(loadWeather, 10 * 60 * 1000);
 
-  // ===== LIVE UPDATE SETTINGS =====
-  var TABLE_REFRESH_MS = 60 * 1000; // tables live refresh
-  var MANIFEST_REFRESH_MS = 6 * 60 * 60 * 1000; // manifest refresh every 6 hours
+  // ===== LIVE UPDATE SETTINGS (DATA SAVING) =====
+  var TABLE_REFRESH_MS = 5 * 60 * 1000; // tables refresh every 5 minutes (DATA SAVING)
+  var MANIFEST_REFRESH_MS = 6 * 60 * 60 * 1000; // manifest refresh every 6 hours (as you have)
 
   // ===== MEDIA PLAYER =====
   var MEDIA_PATH = "media/shared/";
@@ -123,6 +128,12 @@
   var playlist = [];
   var idx = 0;
   var nextTimer = null;
+
+  // ===== SYNC across all TVs =====
+  // All TVs compute same playback position from wall-clock.
+  // Fixed UTC epoch keeps everyone aligned automatically.
+  var SYNC_EPOCH_UTC_MS = Date.UTC(2026, 0, 1, 0, 0, 0);
+  var durCache = {}; // video src -> seconds
 
   function setMediaStatus(t) {
     if (statusEl) statusEl.textContent = t || "";
@@ -150,15 +161,9 @@
     if (!frame) return;
     var vids = frame.getElementsByTagName("video");
     if (vids && vids[0]) {
-      try {
-        vids[0].pause();
-      } catch (_) {}
-      try {
-        vids[0].removeAttribute("src");
-      } catch (_) {}
-      try {
-        vids[0].load();
-      } catch (_) {}
+      try { vids[0].pause(); } catch (_) {}
+      try { vids[0].removeAttribute("src"); } catch (_) {}
+      try { vids[0].load(); } catch (_) {}
       if (vids[0].parentNode) vids[0].parentNode.removeChild(vids[0]);
     }
   }
@@ -183,15 +188,87 @@
     return img;
   }
 
-  function playImage(src, durationSec) {
+  // ===== duration helpers for sync =====
+  function getItemDurationMs(item) {
+    if (!item) return 15000;
+    if (item.type === "image") return Math.max(3000, (item.duration || 15) * 1000);
+
+    var d = durCache[item.src];
+    if (typeof d === "number" && isFinite(d) && d > 1) return d * 1000;
+
+    return 30000; // fallback for unknown video duration
+  }
+
+  function computeSyncedPosition() {
+    if (!playlist.length) return { idx: 0, offsetMs: 0, remainMs: 15000 };
+
+    var total = 0;
+    for (var i = 0; i < playlist.length; i++) total += getItemDurationMs(playlist[i]);
+    if (total < 1000) total = 1000;
+
+    var now = Date.now();
+    var offset = (now - SYNC_EPOCH_UTC_MS) % total;
+    if (offset < 0) offset += total;
+
+    var acc = 0;
+    for (var j = 0; j < playlist.length; j++) {
+      var dms = getItemDurationMs(playlist[j]);
+      if (offset < acc + dms) {
+        var inside = offset - acc;
+        return { idx: j, offsetMs: inside, remainMs: dms - inside };
+      }
+      acc += dms;
+    }
+    return { idx: 0, offsetMs: 0, remainMs: getItemDurationMs(playlist[0]) };
+  }
+
+  function preloadVideoDurations(items) {
+    for (var i = 0; i < items.length; i++) {
+      (function (it) {
+        if (!it || it.type !== "video" || !it.src) return;
+        if (durCache[it.src]) return;
+
+        var vv = document.createElement("video");
+        vv.preload = "metadata";
+        vv.muted = true;
+        vv.src = MEDIA_PATH + it.src; // DATA SAVING: no cache-buster
+
+        var done = false;
+        var to = setTimeout(function () {
+          if (done) return;
+          done = true;
+          try { vv.removeAttribute("src"); vv.load(); } catch (_) {}
+        }, 12000);
+
+        vv.onloadedmetadata = function () {
+          if (done) return;
+          done = true;
+          clearTimeout(to);
+          try {
+            if (isFinite(vv.duration) && vv.duration > 1) durCache[it.src] = vv.duration;
+          } catch (_) {}
+          try { vv.removeAttribute("src"); vv.load(); } catch (_) {}
+        };
+
+        vv.onerror = function () {
+          if (done) return;
+          done = true;
+          clearTimeout(to);
+          try { vv.removeAttribute("src"); vv.load(); } catch (_) {}
+        };
+      })(items[i]);
+    }
+  }
+
+  function playImage(src, durationSec, remainOverrideMs) {
     hideLogoFallback();
     removeVideo();
     var overlay = ensureOverlayImage();
     overlay.style.opacity = "0";
     overlay.src = "";
 
-    var dur = (durationSec || 15) * 1000;
-    if (dur < 3000) dur = 3000;
+    var dur = Math.max(3000, (durationSec || 15) * 1000);
+    if (typeof remainOverrideMs === "number" && remainOverrideMs > 500) dur = remainOverrideMs;
 
     setMediaStatus("Loading image…");
 
@@ -224,10 +301,11 @@
       scheduleNext(900);
     };
 
-    overlay.src = MEDIA_PATH + src + "?t=" + Date.now();
+    // DATA SAVING: remove ?t=Date.now()
+    overlay.src = MEDIA_PATH + src;
   }
 
-  function playVideo(src) {
+  function playVideo(src, seekOffsetMs) {
     hideLogoFallback();
     var overlay = ensureOverlayImage();
     overlay.style.opacity = "0";
@@ -236,11 +314,12 @@
     setMediaStatus("Loading video…");
 
     var v = document.createElement("video");
-    v.src = MEDIA_PATH + src + "?t=" + Date.now();
+    // DATA SAVING: remove ?t=Date.now()
+    v.src = MEDIA_PATH + src;
     v.autoplay = true;
     v.muted = false;
     v.playsInline = true;
-    v.preload = "auto";
+    v.preload = "metadata"; // DATA SAVING
     v.setAttribute("webkit-playsinline", "true");
     v.setAttribute("playsinline", "true");
 
@@ -277,6 +356,24 @@
       scheduleNext(1200);
     }
 
+    v.onloadedmetadata = function () {
+      // learn duration
+      try {
+        if (isFinite(v.duration) && v.duration > 1) durCache[src] = v.duration;
+      } catch (_) {}
+
+      // SYNC seek
+      if (typeof seekOffsetMs === "number" && seekOffsetMs > 500) {
+        var seekSec = seekOffsetMs / 1000;
+        try {
+          if (isFinite(v.duration) && v.duration > 1) {
+            if (seekSec > v.duration - 0.25) seekSec = 0;
+          }
+          v.currentTime = seekSec;
+        } catch (_) {}
+      }
+    };
+
     v.ontimeupdate = function () {
       if (v.currentTime !== lastT) {
         lastT = v.currentTime;
@@ -285,7 +382,7 @@
         setMediaStatus("");
         hideLogoFallback();
       }
-      if (Date.now() - stallAt > 30000) {
+      if (Date.now() - stallAt > 45000) {
         failVideo("Video froze, skipping…");
       }
     };
@@ -331,7 +428,35 @@
     }
 
     if (item.type === "image") return playImage(item.src, item.duration || 15);
-    if (item.type === "video") return playVideo(item.src);
+    if (item.type === "video") return playVideo(item.src, 0);
+
+    showLogoFallback();
+    scheduleNext(600);
+  }
+
+  // SYNC start: choose the correct item and seek inside video
+  function playSyncedNow() {
+    clearNext();
+
+    if (!playlist.length) {
+      showLogoFallback();
+      setMediaStatus("No media found (manifest empty)");
+      return;
+    }
+
+    var pos = computeSyncedPosition();
+    idx = pos.idx;
+    var item = playlist[idx];
+    idx = (idx + 1) % playlist.length;
+
+    if (!item || !item.type || !item.src) {
+      showLogoFallback();
+      scheduleNext(600);
+      return;
+    }
+
+    if (item.type === "image") return playImage(item.src, item.duration || 15, pos.remainMs);
+    if (item.type === "video") return playVideo(item.src, pos.offsetMs);
 
     showLogoFallback();
     scheduleNext(600);
@@ -343,7 +468,8 @@
       setMediaStatus("Loading media…");
     }
 
-    xhr(MANIFEST_URL + "?t=" + Date.now(), function (err, res) {
+    // DATA SAVING: remove ?t=Date.now() so manifest can cache (Netlify CDN)
+    xhr(MANIFEST_URL, function (err, res) {
       if (err) {
         if (!silent) setMediaStatus("Manifest offline (" + err + ")");
         showLogoFallback();
@@ -353,11 +479,16 @@
         var j = JSON.parse(res);
         var items = (j && j.items) ? j.items : [];
         var changed = JSON.stringify(items) !== JSON.stringify(playlist);
+
         if (changed) {
           playlist = items;
-          idx = 0;
-          if (!silent) playNext();
+          preloadVideoDurations(playlist); // improve sync accuracy
+          playSyncedNow();                 // SYNC start
           debug("Manifest updated items=" + playlist.length);
+        } else {
+          preloadVideoDurations(playlist); // keep learning durations
+          // optional: resync at manifest refresh boundary (safe)
+          playSyncedNow();
         }
       } catch (e) {
         if (!silent) setMediaStatus("Manifest JSON error");
@@ -388,9 +519,8 @@
   var progressPage = 0;
   var revisitPage = 0;
 
-  // ✅ Added 2 more rows each
-  var PROGRESS_ROWS_PER_PAGE = 8; // was 7
-  var REVISIT_ROWS_PER_PAGE = 8;  // was 6
+  var PROGRESS_ROWS_PER_PAGE = 8;
+  var REVISIT_ROWS_PER_PAGE = 8;
   var PAGE_SWITCH_MS = 3500;
 
   var progressTimer = null;
@@ -490,7 +620,7 @@
 
   function loadProgress() {
     if (boardMeta) boardMeta.textContent = "Updating…";
-    xhr(CSV_PROGRESS + "&t=" + Date.now(), function (err, res) {
+    xhr(CSV_PROGRESS, function (err, res) {
       if (err) {
         if (boardMeta) boardMeta.textContent = "Offline";
         return;
@@ -510,9 +640,13 @@
           data.push({ customer: customer, model: model, year: year, chassis: chassis, film: film });
         }
 
-        progressData = data;
-        progressPage = 0;
-        startPaging();
+        // DATA SAVING: only redraw if changed
+        if (!sameData(progressData, data)) {
+          progressData = data;
+          progressPage = 0;
+          startPaging();
+        }
+
         debug("Progress live rows=" + progressData.length);
       } catch (e) {
         if (boardMeta) boardMeta.textContent = "Error";
@@ -522,7 +656,7 @@
 
   function loadRevisit() {
     if (revisitMeta) revisitMeta.textContent = "Updating…";
-    xhr(CSV_REVISIT + "&t=" + Date.now(), function (err, res) {
+    xhr(CSV_REVISIT, function (err, res) {
       if (err) {
         if (revisitMeta) revisitMeta.textContent = "Offline";
         return;
@@ -541,9 +675,13 @@
           data.push({ status: status, name: name, car: car, color: color });
         }
 
-        revisitData = data;
-        revisitPage = 0;
-        startPaging();
+        // DATA SAVING: only redraw if changed
+        if (!sameData(revisitData, data)) {
+          revisitData = data;
+          revisitPage = 0;
+          startPaging();
+        }
+
         debug("Revisit live rows=" + revisitData.length);
       } catch (e) {
         if (revisitMeta) revisitMeta.textContent = "Error";
@@ -569,10 +707,6 @@
   setInterval(loadProgress, TABLE_REFRESH_MS);
   setInterval(loadRevisit, TABLE_REFRESH_MS);
 
-  debug("Ready ✓");
+  debug("Ready ✓ (Data Saving + Synced Media)");
 
 })();
-
-
-
-
