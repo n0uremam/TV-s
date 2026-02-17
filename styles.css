@@ -182,7 +182,7 @@ body{
 .table-wrap{flex:1; min-height:0; overflow:hidden}
 .table{width:100%; border-collapse:collapse;}
 .table thead th{
-  text-align:left;
+  text-align:center;
   padding:10px 14px;
   font-size:12px;
   color:rgba(255,255,255,.86);
@@ -217,3 +217,4 @@ body{
   .grid{grid-template-columns:1fr; height:auto}
   .right-card{grid-template-rows:auto auto}
 }
+
