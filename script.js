@@ -407,7 +407,7 @@
   var progressPage = 0;
   var revisitPage = 0;
 
-  var PROGRESS_ROWS_PER_PAGE = 8;
+  var PROGRESS_ROWS_PER_PAGE = 7;
   var REVISIT_ROWS_PER_PAGE = 8;
   var PAGE_SWITCH_MS = 3500;
 
@@ -570,5 +570,6 @@
   debug("Ready ✓ (Muted autoplay + Buffer watchdog + Server-time sync)");
 
 })();
+
 
 
