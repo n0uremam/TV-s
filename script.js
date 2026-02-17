@@ -4,7 +4,9 @@
 
   // ===== Helpers =====
   var debugBox = document.getElementById("debugBox");
-  function debug(msg) { if (debugBox) debugBox.textContent = msg; }
+  function debug(msg) {
+  // debug disabled
+}
 
   window.onerror = function (message, source, lineno, colno) {
     debug("JS ERROR: " + message + " @ " + lineno + ":" + colno);
@@ -596,3 +598,4 @@
   debug("Ready ✓ (Muted autoplay + Buffer watchdog + Server-time sync)");
 
 })();
+
