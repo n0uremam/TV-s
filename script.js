@@ -84,6 +84,7 @@
   var MANIFEST_REFRESH_MS = 6 * 60 * 60 * 1000; // every 6 hours
 
   // ===== MEDIA PLAYER =====
+    // ===== MEDIA PLAYER (TV-safe, cached, crossfade, prefetch) =====
   var MEDIA_PATH = "media/shared/";
   var MANIFEST_URL = MEDIA_PATH + "manifest.json";
 
@@ -95,13 +96,33 @@
   var idx = 0;
   var nextTimer = null;
 
-  function setMediaStatus(t) { if (statusEl) statusEl.textContent = t || ""; }
+  // Data-saver: do NOT force cache-busting on every media file.
+  // If you need updates, you update manifest.json (manifest refresh already happens).
+  function mediaUrl(src) {
+    return MEDIA_PATH + src;
+  }
 
-  function showLogoFallback() { if (logoFallback) logoFallback.style.opacity = "1"; }
-  function hideLogoFallback() { if (logoFallback) logoFallback.style.opacity = "0"; }
+  function setMediaStatus(t) {
+    if (statusEl) statusEl.textContent = t || "";
+  }
 
-  function clearNext() { if (nextTimer) { clearTimeout(nextTimer); nextTimer = null; } }
-  function scheduleNext(ms) { clearNext(); nextTimer = setTimeout(playNext, ms); }
+  function showLogoFallback() {
+    if (logoFallback) logoFallback.style.opacity = "1";
+  }
+  function hideLogoFallback() {
+    if (logoFallback) logoFallback.style.opacity = "0";
+  }
+
+  function clearNext() {
+    if (nextTimer) {
+      clearTimeout(nextTimer);
+      nextTimer = null;
+    }
+  }
+  function scheduleNext(ms) {
+    clearNext();
+    nextTimer = setTimeout(playNext, ms);
+  }
 
   function removeVideo() {
     if (!frame) return;
@@ -114,11 +135,15 @@
     }
   }
 
-  function ensureOverlayImage() {
-    var img = document.getElementById("mediaOverlayImage");
+  // ---- Two-layer image crossfade (no black frames) ----
+  function ensureImageLayer(id) {
+    var img = document.getElementById(id);
     if (img) return img;
     img = document.createElement("img");
-    img.id = "mediaOverlayImage";
+    img.id = id;
+    img.decoding = "async";
+    img.loading = "eager";
+    img.referrerPolicy = "no-referrer";
     img.style.position = "absolute";
     img.style.left = "0";
     img.style.top = "0";
@@ -126,129 +151,114 @@
     img.style.bottom = "0";
     img.style.width = "100%";
     img.style.height = "100%";
-    img.style.objectFit = "contain";
+    img.style.objectFit = "contain"; // images: fit without cropping
     img.style.background = "#000";
     img.style.opacity = "0";
     img.style.transition = "opacity 650ms ease";
+    img.style.willChange = "opacity";
     frame.appendChild(img);
     return img;
   }
 
-  // ===== TRUE SYNC =====
-  // 1) Use server time (Netlify) Date header to align TVs even if TV clock is wrong.
-  // 2) Sync at item boundaries (NO seeking inside video → stable on TVs).
-  var serverSkewMs = 0; // serverNow ≈ Date.now() + serverSkewMs
-  var SYNC_EPOCH_UTC_MS = Date.UTC(2026, 0, 1, 0, 0, 0);
+  var imgA = ensureImageLayer("mediaImgA");
+  var imgB = ensureImageLayer("mediaImgB");
+  var imgAOnTop = true;
 
-  function updateServerSkew(cb) {
-    // HEAD request to get Date header
-    xhr(MANIFEST_URL, function (err, _res, req) {
-      if (!err && req) {
-        try {
-          var dateStr = req.getResponseHeader("Date");
-          if (dateStr) {
-            var serverNow = new Date(dateStr).getTime();
-            if (isFinite(serverNow)) serverSkewMs = serverNow - Date.now();
-          }
-        } catch (_) {}
-      }
-      if (cb) cb();
-    }, "HEAD");
+  function topImg() { return imgAOnTop ? imgA : imgB; }
+  function backImg() { return imgAOnTop ? imgB : imgA; }
+
+  // Preload cache for the next image
+  var preloaded = { src: null, ok: false };
+  function preloadImage(src) {
+    preloaded.src = src;
+    preloaded.ok = false;
+    var im = new Image();
+    im.decoding = "async";
+    im.onload = function () { preloaded.ok = true; };
+    im.onerror = function () { preloaded.ok = false; };
+    im.src = mediaUrl(src);
   }
 
-  function nowSyncedMs() { return Date.now() + serverSkewMs; }
+  function swapToImage(src) {
+    // Load into the BACK image, then fade it in on top
+    var back = backImg();
+    var front = topImg();
 
-  function getItemDurationMs(item) {
-    if (!item) return 15000;
-    if (item.type === "image") return Math.max(3000, (item.duration || 15) * 1000);
-    // For VIDEO sync stability on TVs, use a fixed duration per video item.
-    // You can override per-video by adding "duration" to manifest for video items.
-    return Math.max(5000, ((item.duration || 30) * 1000)); // default 30s if not provided
-  }
-
-  function computeSyncedPosition() {
-    if (!playlist.length) return { idx: 0, remainMs: 15000 };
-
-    var total = 0;
-    for (var i = 0; i < playlist.length; i++) total += getItemDurationMs(playlist[i]);
-    if (total < 1000) total = 1000;
-
-    var offset = (nowSyncedMs() - SYNC_EPOCH_UTC_MS) % total;
-    if (offset < 0) offset += total;
-
-    var acc = 0;
-    for (var j = 0; j < playlist.length; j++) {
-      var dms = getItemDurationMs(playlist[j]);
-      if (offset < acc + dms) return { idx: j, remainMs: dms - (offset - acc) };
-      acc += dms;
-    }
-    return { idx: 0, remainMs: getItemDurationMs(playlist[0]) };
-  }
-
-  function playImage(src, durationSec, remainOverrideMs) {
-    hideLogoFallback();
-    removeVideo();
-    var overlay = ensureOverlayImage();
-    overlay.style.opacity = "0";
-    overlay.src = "";
-
-    var durMs = Math.max(3000, (durationSec || 15) * 1000);
-    if (typeof remainOverrideMs === "number" && remainOverrideMs > 500) durMs = remainOverrideMs;
-
-    setMediaStatus("Loading image…");
+    back.style.opacity = "0";
+    back.src = ""; // reset
 
     var done = false;
+
+    // TVs can be slow: give them more time before skipping
+    var IMAGE_TIMEOUT_MS = 40000;
+
     var hang = setTimeout(function () {
       if (done) return;
       done = true;
       setMediaStatus("Image timeout, skipping…");
-      overlay.style.opacity = "0";
-      showLogoFallback();
+      // keep showing whatever was already on screen
       scheduleNext(900);
-    }, 12000);
+    }, IMAGE_TIMEOUT_MS);
 
-    overlay.onload = function () {
+    back.onload = function () {
       if (done) return;
       done = true;
       clearTimeout(hang);
+
+      // Fade-in new image, fade-out old
+      back.style.opacity = "1";
+      front.style.opacity = "0";
+      imgAOnTop = !imgAOnTop;
+
       setMediaStatus("");
-      overlay.style.opacity = "1";
-      scheduleNext(durMs);
     };
 
-    overlay.onerror = function () {
+    back.onerror = function () {
       if (done) return;
       done = true;
       clearTimeout(hang);
       setMediaStatus("Image failed, skipping…");
-      overlay.style.opacity = "0";
-      showLogoFallback();
+      // keep old image visible
       scheduleNext(900);
     };
 
-    // DATA SAVING: no cache buster
-    overlay.src = MEDIA_PATH + src;
+    back.src = mediaUrl(src);
   }
 
-  function playVideo(src, remainOverrideMs) {
+  function playImage(src, durationSec) {
     hideLogoFallback();
-    var overlay = ensureOverlayImage();
-    overlay.style.opacity = "0";
     removeVideo();
 
+    var dur = (durationSec || 15) * 1000;
+    if (dur < 3000) dur = 3000;
+
+    // If next image is already preloaded, transition immediately
+    setMediaStatus("Loading image…");
+    swapToImage(src);
+
+    // schedule next after duration (even if still loading, the timeout guard protects)
+    scheduleNext(dur);
+
+    // Preload the next image in playlist to reduce “Loading image…”
+    var next = playlist[(idx) % playlist.length]; // idx already advanced in playNext()
+    if (next && next.type === "image" && next.src) preloadImage(next.src);
+  }
+
+  function playVideo(src) {
+    hideLogoFallback();
+
+    // keep the current image visible behind video (prevents black on slow start)
+    // do NOT clear the image layers.
+
+    removeVideo();
     setMediaStatus("Loading video…");
 
     var v = document.createElement("video");
-    v.src = MEDIA_PATH + src;     // DATA SAVING: no cache buster
+    v.src = mediaUrl(src);
     v.autoplay = true;
-
-    // IMPORTANT: MUST be muted for TV autoplay reliability
-    v.muted = true;
-    v.setAttribute("muted", "true");
-    try { v.volume = 0; } catch (_) {}
-
+    v.muted = false; // keep your choice
     v.playsInline = true;
-    v.preload = "metadata";       // DATA SAVING + faster start on weak TVs
+    v.preload = "auto";
     v.setAttribute("webkit-playsinline", "true");
     v.setAttribute("playsinline", "true");
 
@@ -259,8 +269,10 @@
     v.style.bottom = "0";
     v.style.width = "100%";
     v.style.height = "100%";
+
+    // Videos: do NOT "shrink to fit" => keep cover (fills screen nicely)
     v.style.objectFit = "cover";
-    v.style.background = "#000";
+    v.style.background = "transparent"; // show image behind while buffering
 
     frame.appendChild(v);
 
@@ -268,26 +280,21 @@
     var lastT = -1;
     var stallAt = Date.now();
 
-    // Start watchdog: if no timeupdate in 15s -> skip (fix endless buffering)
-    var startWatchdog = setTimeout(function () {
+    // If a TV cannot start quickly, skip instead of staying on “Buffering…”
+    var firstFrameTimer = setTimeout(function () {
       if (!started) {
-        setMediaStatus("Video stuck, skipping…");
+        setMediaStatus("Video can't start, skipping…");
         removeVideo();
-        showLogoFallback();
         scheduleNext(1200);
       }
-    }, 15000);
+    }, 30000);
 
     function failVideo(msg) {
-      clearTimeout(startWatchdog);
+      clearTimeout(firstFrameTimer);
       setMediaStatus(msg || "Video error, skipping…");
       removeVideo();
-      showLogoFallback();
       scheduleNext(1200);
     }
-
-    // If we want to force “remain” sync on TV, just schedule next at remainOverrideMs
-    var forcedNextMs = (typeof remainOverrideMs === "number" && remainOverrideMs > 500) ? remainOverrideMs : null;
 
     v.ontimeupdate = function () {
       if (v.currentTime !== lastT) {
@@ -295,26 +302,21 @@
         started = true;
         stallAt = Date.now();
         setMediaStatus("");
-        hideLogoFallback();
-        clearTimeout(startWatchdog);
       }
-      // Freeze guard
       if (Date.now() - stallAt > 45000) {
         failVideo("Video froze, skipping…");
       }
     };
 
     v.onended = function () {
-      clearTimeout(startWatchdog);
+      clearTimeout(firstFrameTimer);
       removeVideo();
-      showLogoFallback();
       scheduleNext(600);
     };
-
-    v.onerror = function () { failVideo("Video error, skipping…"); };
-
+    v.onerror = function () {
+      failVideo("Video error, skipping…");
+    };
     v.onwaiting = function () {
-      showLogoFallback();
       setMediaStatus("Buffering…");
     };
 
@@ -324,13 +326,11 @@
     } catch (e) {
       failVideo("Play failed");
     }
-
-    // Boundary-sync: regardless of video natural length, move on at synced boundary.
-    if (forcedNextMs) scheduleNext(forcedNextMs);
   }
 
   function playNext() {
     clearNext();
+
     if (!playlist.length) {
       showLogoFallback();
       setMediaStatus("No media found (manifest empty)");
@@ -341,53 +341,22 @@
     idx = (idx + 1) % playlist.length;
 
     if (!item || !item.type || !item.src) {
-      showLogoFallback();
       scheduleNext(600);
       return;
     }
 
     if (item.type === "image") return playImage(item.src, item.duration || 15);
-    if (item.type === "video") return playVideo(item.src, (item.duration || 30) * 1000);
+    if (item.type === "video") return playVideo(item.src);
 
-    showLogoFallback();
-    scheduleNext(600);
-  }
-
-  function playSyncedNow() {
-    clearNext();
-    if (!playlist.length) {
-      showLogoFallback();
-      setMediaStatus("No media found (manifest empty)");
-      return;
-    }
-
-    var pos = computeSyncedPosition();
-    idx = pos.idx;
-
-    var item = playlist[idx];
-    idx = (idx + 1) % playlist.length;
-
-    if (!item || !item.type || !item.src) {
-      showLogoFallback();
-      scheduleNext(600);
-      return;
-    }
-
-    // Sync at boundaries: show current item for remaining time only
-    if (item.type === "image") return playImage(item.src, item.duration || 15, pos.remainMs);
-    if (item.type === "video") return playVideo(item.src, pos.remainMs);
-
-    showLogoFallback();
     scheduleNext(600);
   }
 
   function loadManifest(silent) {
     if (!silent) {
-      showLogoFallback();
       setMediaStatus("Loading media…");
     }
 
-    xhr(MANIFEST_URL, function (err, res) {
+    xhr(MANIFEST_URL + "?t=" + Date.now(), function (err, res) {
       if (err) {
         if (!silent) setMediaStatus("Manifest offline (" + err + ")");
         showLogoFallback();
@@ -396,16 +365,19 @@
       try {
         var j = JSON.parse(res);
         var items = (j && j.items) ? j.items : [];
-        var changed = JSON.stringify(items) !== JSON.stringify(playlist);
 
-        if (changed) playlist = items;
+        // Keep existing order; no JSON stringify heavy compare (data-saver + faster)
+        playlist = items || [];
+        if (!playlist.length) {
+          showLogoFallback();
+          setMediaStatus("No media found (manifest empty)");
+          return;
+        }
 
-        // Always refresh server time skew when loading manifest for sync accuracy
-        updateServerSkew(function () {
-          // Start synced
-          playSyncedNow();
-          debug("Manifest items=" + playlist.length + " syncSkewMs=" + serverSkewMs);
-        });
+        if (!silent) {
+          idx = 0;
+          playNext();
+        }
       } catch (e) {
         if (!silent) setMediaStatus("Manifest JSON error");
         showLogoFallback();
@@ -415,7 +387,7 @@
 
   // start media
   showLogoFallback();
-  updateServerSkew(function () { loadManifest(false); });
+  loadManifest(false);
   setInterval(function () { loadManifest(true); }, MANIFEST_REFRESH_MS);
 
   // ===== TABLES (LIVE) =====
@@ -598,4 +570,5 @@
   debug("Ready ✓ (Muted autoplay + Buffer watchdog + Server-time sync)");
 
 })();
+
 
