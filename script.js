@@ -1,28 +1,12 @@
-// script.js (UPDATED)
-// Goals:
-// ✅ Remove black screen between video <-> image (keep last frame/image visible under video)
-// ✅ Smooth cross-fade images (already 2 layers)
-// ✅ Sync media timing across TVs using server Date header
-// ✅ Data-saving (no cache-busting for media files, only manifest / tables)
-// ✅ Keep UI clean (hide “Loading/Buffering” spam)
-
 (function () {
   "use strict";
-
-  /* =========================
-     HELPERS
-  ========================== */
   var debugBox = document.getElementById("debugBox");
   function debug(msg) {
-    // Data-saving / clean UI: keep this silent.
-    // If you ever want debug back: if (debugBox) debugBox.textContent = msg;
   }
-
   window.onerror = function (message, source, lineno, colno) {
     debug("JS ERROR: " + message + " @ " + lineno + ":" + colno);
     return false;
   };
-
   function xhr(url, cb, method) {
     var r = new XMLHttpRequest();
     r.open(method || "GET", url, true);
@@ -34,7 +18,6 @@
     r.onerror = r.ontimeout = function () { cb("NETWORK/TIMEOUT", null, r); };
     r.send();
   }
-
   function esc(s) {
     s = s === undefined || s === null ? "" : String(s);
     return s
@@ -43,7 +26,6 @@
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;");
   }
-
   function parseCSV(t) {
     var rows = [], row = [];
     var cur = "", q = false;
@@ -60,12 +42,7 @@
     if (cur || row.length) { row.push(cur); rows.push(row); }
     return rows;
   }
-
   function sameData(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
-
-  /* =========================
-     CLOCK
-  ========================== */
   function tickClock() {
     var d = new Date();
     function pad(n) { return n < 10 ? "0" + n : "" + n; }
@@ -76,10 +53,6 @@
   }
   setInterval(tickClock, 1000);
   tickClock();
-
-  /* =========================
-     WEATHER (Cairo)
-  ========================== */
   function loadWeather() {
     var el = document.getElementById("weatherCairo");
     if (!el) return;
@@ -94,28 +67,16 @@
   }
   loadWeather();
   setInterval(loadWeather, 10 * 60 * 1000);
-
-  /* =========================
-     DATA-SAVING SETTINGS
-  ========================== */
   var TABLE_REFRESH_MS = 5 * 60 * 1000;           // tables refresh every 5 min
   var MANIFEST_REFRESH_MS = 3 * 60 * 60 * 1000;   // manifest refresh every 3 hours
   var RESYNC_MEDIA_MS = 10 * 60 * 1000;           // re-sync playback every 10 min
-
-  /* =========================
-     MEDIA PLAYER (Vercel)
-  ========================== */
   var MEDIA_PATH = "/media/shared/";
   var MANIFEST_URL = MEDIA_PATH + "manifest.json";
-
   var frame = document.getElementById("mediaFrame");
   var statusEl = document.getElementById("mediaStatus");
   var logoFallback = document.getElementById("mediaLogoFallback");
-
   function mediaUrl(src) { return MEDIA_PATH + src; }
-
   function setMediaStatus(t) {
-    // Only show critical messages (no “Loading/Buffering” spam)
     if (!statusEl) return;
     if (!t) { statusEl.textContent = ""; return; }
     var s = String(t).toLowerCase();
@@ -125,28 +86,20 @@
       statusEl.textContent = "";
     }
   }
-
   function showLogoFallback() { if (logoFallback) logoFallback.style.opacity = "1"; }
   function hideLogoFallback() { if (logoFallback) logoFallback.style.opacity = "0"; }
-
   var playlist = [];
   var idx = 0;
   var nextTimer = null;
   var resyncTimer = null;
-
   function clearNext() { if (nextTimer) { clearTimeout(nextTimer); nextTimer = null; } }
   function scheduleNext(ms) { clearNext(); nextTimer = setTimeout(playNext, ms); }
-
-  // --- keep last image visible under video (this is the MAIN black-screen fix) ---
   function keepLastImageVisible() {
-    // Ensure one image layer is visible (top layer) so if video disappears there is NO black gap.
     var front = topImg();
     var back = backImg();
-
     if (front && front.src) front.style.opacity = "1";
     else if (back && back.src) back.style.opacity = "1";
   }
-
   function removeVideo() {
     if (!frame) return;
     var vids = frame.getElementsByTagName("video");
@@ -157,11 +110,8 @@
       try { v.load(); } catch (_) {}
       if (v.parentNode) v.parentNode.removeChild(v);
     }
-    // After removing video, show image instantly
     keepLastImageVisible();
   }
-
-  // Two image layers => smooth cross-fade
   function ensureImageLayer(id) {
     var img = document.getElementById(id);
     if (img) return img;
@@ -182,21 +132,16 @@
     img.style.opacity = "0";
     img.style.transition = "opacity 650ms ease";
     img.style.willChange = "opacity";
-    // IMPORTANT: keep images above black background but BELOW video
     img.style.zIndex = "1";
     frame.appendChild(img);
     return img;
   }
-
   var imgA = ensureImageLayer("mediaImgA");
   var imgB = ensureImageLayer("mediaImgB");
   var imgAOnTop = true;
   function topImg() { return imgAOnTop ? imgA : imgB; }
   function backImg() { return imgAOnTop ? imgB : imgA; }
-
-  // --- Sync support (server time) ---
   var serverSkewMs = 0;
-
   function getServerNow(cb) {
     xhr(MANIFEST_URL + "?ts=" + Date.now(), function (err, _res, req) {
       if (err || !req) return cb(Date.now() + serverSkewMs);
@@ -212,8 +157,6 @@
       }
     }, "HEAD");
   }
-
-  // Video durations for SYNC (seconds)
   var VIDEO_DUR = {
     "02.mp4": 68,
     "04.mp4": 7,
@@ -227,8 +170,6 @@
     "18.mp4": 23,
     "19.mp4": 35,
     "21.mp4": 76,
-
-    // Optional extras (kept from your list)
     "22.mp4": 37,
     "23.mp4": 67,
     "24.mp4": 77,
@@ -236,18 +177,16 @@
     "26.mp4": 85,
     "27.mp4": 11
   };
-
   function itemDurationMs(item) {
     if (!item) return 0;
     if (item.type === "image") return Math.max(3000, (item.duration || 15) * 1000);
     if (item.type === "video") {
       var s = VIDEO_DUR[item.src];
       if (typeof s === "number" && s > 0) return Math.max(3000, s * 1000);
-      return 30000; // fallback
+      return 30000;
     }
     return 0;
   }
-
   function buildTimeline(items) {
     var tl = [];
     var total = 0;
@@ -261,11 +200,9 @@
     }
     return { tl: tl, totalMs: total };
   }
-
   function computeSyncedState(serverNow, items) {
     var timeline = buildTimeline(items);
     if (!timeline.tl.length || timeline.totalMs <= 0) return null;
-
     var pos = serverNow % timeline.totalMs;
     for (var i = 0; i < timeline.tl.length; i++) {
       var seg = timeline.tl[i];
@@ -280,18 +217,12 @@
     }
     return { index: 0, offsetMs: 0, remainingMs: timeline.tl[0].durMs, timeline: timeline };
   }
-
-  // --- Image swap (NO BLANKING while loading) ---
   function swapToImage(src, onReady) {
     var back = backImg();
     var front = topImg();
-
-    // Keep current image visible while next loads (prevents black screen)
     if (front && front.src) front.style.opacity = "1";
-
     var done = false;
     var IMAGE_TIMEOUT_MS = 20000;
-
     var hang = setTimeout(function () {
       if (done) return;
       done = true;
@@ -299,23 +230,17 @@
       showLogoFallback();
       if (onReady) onReady(false);
     }, IMAGE_TIMEOUT_MS);
-
     back.onload = function () {
       if (done) return;
       done = true;
       clearTimeout(hang);
-
       hideLogoFallback();
-
-      // Fade in new image, fade out old
       back.style.opacity = "1";
       front.style.opacity = "0";
       imgAOnTop = !imgAOnTop;
-
       setMediaStatus("");
       if (onReady) onReady(true);
     };
-
     back.onerror = function () {
       if (done) return;
       done = true;
@@ -327,50 +252,33 @@
 
     back.src = mediaUrl(src);
   }
-
   function playImage(src, durationMs, remainMsOverride) {
-    // DO NOT remove video until image is ready, otherwise you create black gap.
-    // But we must stop audio/video decode eventually; so:
-    // - Keep the video playing until image loads (image layers are under it)
-    // - When image is ready, remove video.
     var remain = (typeof remainMsOverride === "number") ? remainMsOverride : durationMs;
     remain = Math.max(700, remain);
-
     hideLogoFallback();
     setMediaStatus(""); // silent
-
     swapToImage(src, function (ok) {
       if (!ok) {
-        // if failed, remove video anyway (fallback)
         removeVideo();
         scheduleNext(900);
         return;
       }
-      // Now image is visible; safe to remove video with ZERO black frame
       removeVideo();
       scheduleNext(remain);
     });
   }
-
-  // --- Video: put video ABOVE images so images are always there under it ---
   function playVideo(src, offsetMs, remainMs) {
     hideLogoFallback();
-
-    // Keep last image visible under the video (no black)
     keepLastImageVisible();
-
-    // Remove any previous video, then create new
     removeVideo();
-
     var v = document.createElement("video");
     v.src = mediaUrl(src);
     v.autoplay = true;
-    v.muted = true;          // TV autoplay reliable
+    v.muted = false;
     v.playsInline = true;
     v.preload = "auto";
     v.setAttribute("webkit-playsinline", "true");
     v.setAttribute("playsinline", "true");
-
     v.style.position = "absolute";
     v.style.left = "0";
     v.style.top = "0";
@@ -380,14 +288,11 @@
     v.style.height = "100%";
     v.style.objectFit = "cover";
     v.style.background = "transparent";
-    v.style.zIndex = "5"; // above images
-
+    v.style.zIndex = "5";
     frame.appendChild(v);
-
     var started = false;
     var lastT = -1;
     var stallAt = Date.now();
-
     var START_TIMEOUT_MS = 25000;
     var firstFrameTimer = setTimeout(function () {
       if (!started) {
@@ -397,7 +302,6 @@
         scheduleNext(1200);
       }
     }, START_TIMEOUT_MS);
-
     function failVideo(msg) {
       clearTimeout(firstFrameTimer);
       if (msg) setMediaStatus(msg);
@@ -405,7 +309,6 @@
       showLogoFallback();
       scheduleNext(1200);
     }
-
     v.onloadedmetadata = function () {
       try {
         if (typeof offsetMs === "number" && isFinite(offsetMs) && offsetMs > 0) {
@@ -418,7 +321,6 @@
         }
       } catch (_) {}
     };
-
     v.ontimeupdate = function () {
       if (v.currentTime !== lastT) {
         lastT = v.currentTime;
@@ -430,34 +332,25 @@
       if (Date.now() - stallAt > 45000) {
         failVideo("Video froze, skipping…");
       }
-
-      // Sync-based end timer (avoid long tail buffering / black)
       if (typeof remainMs === "number" && remainMs > 0 && !v.__scheduledEnd) {
         v.__scheduledEnd = true;
         setTimeout(function () {
-          // We don't want a black screen—keep images underneath visible
           keepLastImageVisible();
-          // Remove video and move on
           removeVideo();
           scheduleNext(600);
         }, Math.max(1200, remainMs));
       }
     };
-
     v.onended = function () {
       clearTimeout(firstFrameTimer);
       keepLastImageVisible();
       removeVideo();
       scheduleNext(600);
     };
-
     v.onerror = function () {
       failVideo("Video error, skipping…");
     };
-
-    // Don’t show Buffering; watchdog handles it silently
     v.onwaiting = function () {};
-
     try {
       var p = v.play();
       if (p && p.catch) p.catch(function () { failVideo("Autoplay blocked"); });
@@ -465,17 +358,12 @@
       failVideo("Play failed");
     }
   }
-
-  /* =========================
-     SYNCED PLAYBACK
-  ========================== */
   function startSyncedPlayback() {
     if (!playlist || !playlist.length) {
       showLogoFallback();
       setMediaStatus("No media found (manifest empty)");
       return;
     }
-
     getServerNow(function (serverNow) {
       var st = computeSyncedState(serverNow, playlist);
       if (!st || !st.timeline || !st.timeline.tl.length) {
@@ -483,16 +371,11 @@
         setMediaStatus("No media found (manifest empty)");
         return;
       }
-
       var seg = st.timeline.tl[st.index];
       var it = seg.item;
-
-      // Next index based on timeline (keeps all TVs aligned)
       var nextIndexInTimeline = (st.index + 1) % st.timeline.tl.length;
       idx = nextIndexInTimeline;
-
       clearNext();
-
       if (it.type === "image") {
         playImage(it.src, seg.durMs, st.remainingMs);
       } else if (it.type === "video") {
@@ -502,33 +385,25 @@
       }
     });
   }
-
   function playNext() {
     clearNext();
-
     if (!playlist.length) {
       showLogoFallback();
       setMediaStatus("No media found (manifest empty)");
       return;
     }
-
     var item = playlist[idx];
     idx = (idx + 1) % playlist.length;
-
     if (!item || !item.type || !item.src) {
       scheduleNext(600);
       return;
     }
-
     var dur = itemDurationMs(item);
     if (item.type === "image") return playImage(item.src, dur, dur);
     if (item.type === "video") return playVideo(item.src, 0, dur);
-
     scheduleNext(600);
   }
-
   function loadManifest(silent) {
-    // Only cache-bust MANIFEST, not media files
     xhr(MANIFEST_URL + "?ts=" + Date.now(), function (err, res) {
       if (err) {
         if (!silent) setMediaStatus("Manifest offline (" + err + ")");
@@ -545,8 +420,6 @@
           setMediaStatus("No media found (manifest empty)");
           return;
         }
-
-        // Start synced playback (first load & manual refresh)
         if (!silent) startSyncedPlayback();
       } catch (e) {
         if (!silent) setMediaStatus("Manifest JSON error");
@@ -554,13 +427,9 @@
       }
     });
   }
-
-  // Start media
   showLogoFallback();
   loadManifest(false);
-
   setInterval(function () { loadManifest(true); }, MANIFEST_REFRESH_MS);
-
   function startResyncLoop() {
     if (resyncTimer) clearInterval(resyncTimer);
     resyncTimer = setInterval(function () {
@@ -568,38 +437,27 @@
     }, RESYNC_MEDIA_MS);
   }
   startResyncLoop();
-
-  /* =========================
-     TABLES (LIVE, DATA-SAVING)
-  ========================== */
   var CSV_PROGRESS =
     "https://docs.google.com/spreadsheets/d/e/2PACX-1vSKpulVdyocoyi3Vj-BHBG9aOcfsG-QkgLtwlLGjbWFy_YkTmiN5mOsiYfWS6_sqLNtS4hCie2c3JDH/pub?gid=2111665249&single=true&output=csv";
-
   var CSV_REVISIT =
     "https://docs.google.com/spreadsheets/d/e/2PACX-1vSKpulVdyocoyi3Vj-BHBG9aOcfsG-QkgLtwlLGjbWFy_YkTmiN5mOsiYfWS6_sqLNtS4hCie2c3JDH/pub?gid=1236474828&single=true&output=csv";
-
   var progressBody = document.getElementById("progressBody");
   var revisitBody = document.getElementById("revisitBody");
   var boardMeta = document.getElementById("boardMeta");
   var revisitMeta = document.getElementById("revisitMeta");
-
   var progressData = [];
   var revisitData = [];
   var progressPage = 0;
   var revisitPage = 0;
-
-  var PROGRESS_ROWS_PER_PAGE = 9;
+  var PROGRESS_ROWS_PER_PAGE = 8;
   var REVISIT_ROWS_PER_PAGE = 9;
   var PAGE_SWITCH_MS = 4000;
-
   var progressTimer = null;
   var revisitTimer = null;
-
   function stopPaging() {
     if (progressTimer) { clearInterval(progressTimer); progressTimer = null; }
     if (revisitTimer) { clearInterval(revisitTimer); revisitTimer = null; }
   }
-
   function renderProgress() {
     if (!progressBody) return;
 
@@ -608,13 +466,10 @@
       if (boardMeta) boardMeta.textContent = "Live · 0";
       return;
     }
-
     var pages = Math.ceil(progressData.length / PROGRESS_ROWS_PER_PAGE);
     if (progressPage >= pages) progressPage = 0;
-
     var start = progressPage * PROGRESS_ROWS_PER_PAGE;
     var slice = progressData.slice(start, start + PROGRESS_ROWS_PER_PAGE);
-
     var html = "";
     for (var i = 0; i < slice.length; i++) {
       var r = slice[i];
@@ -626,28 +481,21 @@
         + "<td>" + esc(r.film) + "</td>"
         + "</tr>";
     }
-
     progressBody.innerHTML = html;
     if (boardMeta) boardMeta.textContent = "Live · " + progressData.length + " · Page " + (progressPage + 1) + "/" + pages;
-
     progressPage++;
   }
-
   function renderRevisit() {
     if (!revisitBody) return;
-
     if (!revisitData.length) {
       revisitBody.innerHTML = '<tr><td colspan="4" class="muted">No bookings today</td></tr>';
       if (revisitMeta) revisitMeta.textContent = "Live · 0";
       return;
     }
-
     var pages = Math.ceil(revisitData.length / REVISIT_ROWS_PER_PAGE);
     if (revisitPage >= pages) revisitPage = 0;
-
     var start = revisitPage * REVISIT_ROWS_PER_PAGE;
     var slice = revisitData.slice(start, start + REVISIT_ROWS_PER_PAGE);
-
     var html = "";
     for (var i = 0; i < slice.length; i++) {
       var r = slice[i];
@@ -658,13 +506,10 @@
         + "<td>" + esc(r.color) + "</td>"
         + "</tr>";
     }
-
     revisitBody.innerHTML = html;
     if (revisitMeta) revisitMeta.textContent = "Live · " + revisitData.length + " · Page " + (revisitPage + 1) + "/" + pages;
-
     revisitPage++;
   }
-
   function startPaging() {
     stopPaging();
     renderProgress();
@@ -672,7 +517,6 @@
     progressTimer = setInterval(renderProgress, PAGE_SWITCH_MS);
     revisitTimer = setInterval(renderRevisit, PAGE_SWITCH_MS);
   }
-
   function loadProgress() {
     if (boardMeta) boardMeta.textContent = "Updating…";
     xhr(CSV_PROGRESS + "&t=" + Date.now(), function (err, res) {
@@ -680,8 +524,6 @@
       try {
         var rows = parseCSV(res).slice(1);
         var data = [];
-
-        // PROGRESS: E,G,I,J,K => 4,6,8,9,10
         for (var i = 0; i < rows.length; i++) {
           var r = rows[i];
           var customer = (r[4] || "").trim();
@@ -692,7 +534,6 @@
           if (!customer) continue;
           data.push({ customer: customer, model: model, year: year, chassis: chassis, film: film });
         }
-
         if (!sameData(progressData, data)) {
           progressData = data;
           progressPage = 0;
@@ -703,7 +544,6 @@
       }
     });
   }
-
   function loadRevisit() {
     if (revisitMeta) revisitMeta.textContent = "Updating…";
     xhr(CSV_REVISIT + "&t=" + Date.now(), function (err, res) {
@@ -711,8 +551,6 @@
       try {
         var rows = parseCSV(res).slice(1);
         var data = [];
-
-        // REVISIT: A,D,F,G => 0,3,5,6
         for (var i = 0; i < rows.length; i++) {
           var r = rows[i];
           var status = (r[0] || "").trim();
@@ -722,7 +560,6 @@
           if (!name) continue;
           data.push({ status: status, name: name, car: car, color: color });
         }
-
         if (!sameData(revisitData, data)) {
           revisitData = data;
           revisitPage = 0;
@@ -733,8 +570,6 @@
       }
     });
   }
-
-  // Manual refresh
   var refreshBtn = document.getElementById("refreshBtn");
   if (refreshBtn) {
     refreshBtn.onclick = function () {
@@ -744,14 +579,10 @@
       startSyncedPlayback();
     };
   }
-
-  // Initial + Auto refresh
   loadProgress();
   loadRevisit();
   startPaging();
-
   setInterval(loadProgress, TABLE_REFRESH_MS);
   setInterval(loadRevisit, TABLE_REFRESH_MS);
-
   debug("Ready ✓");
 })();
