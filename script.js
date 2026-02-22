@@ -1,5 +1,17 @@
+// script.js (UPDATED)
+// Goals:
+// ✅ Remove black screen between video <-> image (keep last frame/image visible under video)
+// ✅ Smooth cross-fade images (already 2 layers)
+// ✅ Sync media timing across TVs using server Date header
+// ✅ Data-saving (no cache-busting for media files, only manifest / tables)
+// ✅ Keep UI clean (hide “Loading/Buffering” spam)
+
 (function () {
   "use strict";
+
+  /* =========================
+     HELPERS
+  ========================== */
   var debugBox = document.getElementById("debugBox");
   function debug(msg) {
     // Data-saving / clean UI: keep this silent.
@@ -19,9 +31,7 @@
       if (r.status >= 200 && r.status < 300) cb(null, r.responseText, r);
       else cb("HTTP " + r.status, null, r);
     };
-    r.onerror = r.ontimeout = function () {
-      cb("NETWORK/TIMEOUT", null, r);
-    };
+    r.onerror = r.ontimeout = function () { cb("NETWORK/TIMEOUT", null, r); };
     r.send();
   }
 
@@ -35,88 +45,66 @@
   }
 
   function parseCSV(t) {
-    var rows = [],
-      row = [];
-    var cur = "",
-      q = false;
+    var rows = [], row = [];
+    var cur = "", q = false;
     for (var i = 0; i < t.length; i++) {
-      var c = t[i],
-        n = t[i + 1];
-      if (c == '"' && q && n == '"') {
-        cur += '"';
-        i++;
-      } else if (c == '"') {
-        q = !q;
-      } else if (c == "," && !q) {
-        row.push(cur);
-        cur = "";
-      } else if ((c == "\n" || c == "\r") && !q) {
-        if (cur || row.length) {
-          row.push(cur);
-          rows.push(row.slice());
-        }
-        row.length = 0;
-        cur = "";
-      } else {
-        cur += c;
-      }
+      var c = t[i], n = t[i + 1];
+      if (c == '"' && q && n == '"') { cur += '"'; i++; }
+      else if (c == '"') { q = !q; }
+      else if (c == "," && !q) { row.push(cur); cur = ""; }
+      else if ((c == "\n" || c == "\r") && !q) {
+        if (cur || row.length) { row.push(cur); rows.push(row.slice()); }
+        row.length = 0; cur = "";
+      } else { cur += c; }
     }
-    if (cur || row.length) {
-      row.push(cur);
-      rows.push(row);
-    }
+    if (cur || row.length) { row.push(cur); rows.push(row); }
     return rows;
   }
 
-  function sameData(a, b) {
-    return JSON.stringify(a) === JSON.stringify(b);
-  }
+  function sameData(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
 
-  // ===== Clock =====
+  /* =========================
+     CLOCK
+  ========================== */
   function tickClock() {
     var d = new Date();
-    function pad(n) {
-      return n < 10 ? "0" + n : "" + n;
-    }
+    function pad(n) { return n < 10 ? "0" + n : "" + n; }
     var timeEl = document.getElementById("timeLocal");
     var dateEl = document.getElementById("dateLocal");
-    if (timeEl)
-      timeEl.textContent =
-        pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
+    if (timeEl) timeEl.textContent = pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
     if (dateEl) dateEl.textContent = d.toDateString();
   }
   setInterval(tickClock, 1000);
   tickClock();
 
-  // ===== Weather (Cairo) =====
+  /* =========================
+     WEATHER (Cairo)
+  ========================== */
   function loadWeather() {
     var el = document.getElementById("weatherCairo");
     if (!el) return;
-    var url =
-      "https://api.open-meteo.com/v1/forecast?latitude=30.0444&longitude=31.2357&current=temperature_2m";
+    var url = "https://api.open-meteo.com/v1/forecast?latitude=30.0444&longitude=31.2357&current=temperature_2m";
     xhr(url + "&t=" + Date.now(), function (err, res) {
-      if (err) {
-        el.textContent = "--";
-        return;
-      }
+      if (err) { el.textContent = "--"; return; }
       try {
         var j = JSON.parse(res);
         el.textContent = Math.round(j.current.temperature_2m) + "°C";
-      } catch (e) {
-        el.textContent = "--";
-      }
+      } catch (e) { el.textContent = "--"; }
     });
   }
   loadWeather();
   setInterval(loadWeather, 10 * 60 * 1000);
 
-  // ===== LIVE UPDATE SETTINGS (Data-saving) =====
-  var TABLE_REFRESH_MS = 5 * 60 * 1000;          // tables refresh every 5 minutes (saves data)
-  var MANIFEST_REFRESH_MS = 3 * 60 * 60 * 1000;  // manifest refresh every 3 hours (saves data)
-  var RESYNC_MEDIA_MS = 10 * 60 * 1000;          // re-sync media every 10 minutes
+  /* =========================
+     DATA-SAVING SETTINGS
+  ========================== */
+  var TABLE_REFRESH_MS = 5 * 60 * 1000;           // tables refresh every 5 min
+  var MANIFEST_REFRESH_MS = 3 * 60 * 60 * 1000;   // manifest refresh every 3 hours
+  var RESYNC_MEDIA_MS = 10 * 60 * 1000;           // re-sync playback every 10 min
 
-  // ===== MEDIA PLAYER (Vercel) =====
-  // IMPORTANT on Vercel: use absolute path from site root
+  /* =========================
+     MEDIA PLAYER (Vercel)
+  ========================== */
   var MEDIA_PATH = "/media/shared/";
   var MANIFEST_URL = MEDIA_PATH + "manifest.json";
 
@@ -124,60 +112,53 @@
   var statusEl = document.getElementById("mediaStatus");
   var logoFallback = document.getElementById("mediaLogoFallback");
 
-  // Keep media URLs WITHOUT cache-busting => better caching + less buffering
-  function mediaUrl(src) {
-    return MEDIA_PATH + src;
-  }
+  function mediaUrl(src) { return MEDIA_PATH + src; }
 
   function setMediaStatus(t) {
-    // Hide noisy messages: only show critical ones
+    // Only show critical messages (no “Loading/Buffering” spam)
     if (!statusEl) return;
-    if (!t) {
+    if (!t) { statusEl.textContent = ""; return; }
+    var s = String(t).toLowerCase();
+    if (s.indexOf("offline") >= 0 || s.indexOf("error") >= 0 || s.indexOf("failed") >= 0 || s.indexOf("timeout") >= 0) {
+      statusEl.textContent = t;
+    } else {
       statusEl.textContent = "";
-      return;
     }
-    // Only show these:
-    if (
-      t.indexOf("offline") >= 0 ||
-      t.indexOf("error") >= 0 ||
-      t.indexOf("failed") >= 0 ||
-      t.indexOf("timeout") >= 0
-    ) statusEl.textContent = t;
-    else statusEl.textContent = ""; // suppress "Loading..." / "Buffering..." spam
   }
 
-  function showLogoFallback() {
-    if (logoFallback) logoFallback.style.opacity = "1";
-  }
-  function hideLogoFallback() {
-    if (logoFallback) logoFallback.style.opacity = "0";
-  }
+  function showLogoFallback() { if (logoFallback) logoFallback.style.opacity = "1"; }
+  function hideLogoFallback() { if (logoFallback) logoFallback.style.opacity = "0"; }
 
   var playlist = [];
   var idx = 0;
   var nextTimer = null;
   var resyncTimer = null;
 
-  function clearNext() {
-    if (nextTimer) {
-      clearTimeout(nextTimer);
-      nextTimer = null;
-    }
-  }
-  function scheduleNext(ms) {
-    clearNext();
-    nextTimer = setTimeout(playNext, ms);
+  function clearNext() { if (nextTimer) { clearTimeout(nextTimer); nextTimer = null; } }
+  function scheduleNext(ms) { clearNext(); nextTimer = setTimeout(playNext, ms); }
+
+  // --- keep last image visible under video (this is the MAIN black-screen fix) ---
+  function keepLastImageVisible() {
+    // Ensure one image layer is visible (top layer) so if video disappears there is NO black gap.
+    var front = topImg();
+    var back = backImg();
+
+    if (front && front.src) front.style.opacity = "1";
+    else if (back && back.src) back.style.opacity = "1";
   }
 
   function removeVideo() {
     if (!frame) return;
     var vids = frame.getElementsByTagName("video");
     if (vids && vids[0]) {
-      try { vids[0].pause(); } catch (_) {}
-      try { vids[0].removeAttribute("src"); } catch (_) {}
-      try { vids[0].load(); } catch (_) {}
-      if (vids[0].parentNode) vids[0].parentNode.removeChild(vids[0]);
+      var v = vids[0];
+      try { v.pause(); } catch (_) {}
+      try { v.removeAttribute("src"); } catch (_) {}
+      try { v.load(); } catch (_) {}
+      if (v.parentNode) v.parentNode.removeChild(v);
     }
+    // After removing video, show image instantly
+    keepLastImageVisible();
   }
 
   // Two image layers => smooth cross-fade
@@ -196,11 +177,13 @@
     img.style.bottom = "0";
     img.style.width = "100%";
     img.style.height = "100%";
-    img.style.objectFit = "contain"; // keep your “no stretch” look for images
+    img.style.objectFit = "contain";
     img.style.background = "#000";
     img.style.opacity = "0";
     img.style.transition = "opacity 650ms ease";
     img.style.willChange = "opacity";
+    // IMPORTANT: keep images above black background but BELOW video
+    img.style.zIndex = "1";
     frame.appendChild(img);
     return img;
   }
@@ -212,10 +195,9 @@
   function backImg() { return imgAOnTop ? imgB : imgA; }
 
   // --- Sync support (server time) ---
-  var serverSkewMs = 0; // serverNow = Date.now() + serverSkewMs
+  var serverSkewMs = 0;
 
   function getServerNow(cb) {
-    // Use HEAD on the manifest (same origin) to read Date header => sync TVs
     xhr(MANIFEST_URL + "?ts=" + Date.now(), function (err, _res, req) {
       if (err || !req) return cb(Date.now() + serverSkewMs);
       try {
@@ -231,7 +213,7 @@
     }, "HEAD");
   }
 
-  // Video durations (seconds) for SYNC (from your list)
+  // Video durations for SYNC (seconds)
   var VIDEO_DUR = {
     "02.mp4": 68,
     "04.mp4": 7,
@@ -245,11 +227,13 @@
     "18.mp4": 23,
     "19.mp4": 35,
     "21.mp4": 76,
-    "22.mp4": 37, 
+
+    // Optional extras (kept from your list)
+    "22.mp4": 37,
     "23.mp4": 67,
-    "24.mp4": 77, 
+    "24.mp4": 77,
     "25.mp4": 180,
-    "26.mp4": 85, 
+    "26.mp4": 85,
     "27.mp4": 11
   };
 
@@ -259,8 +243,7 @@
     if (item.type === "video") {
       var s = VIDEO_DUR[item.src];
       if (typeof s === "number" && s > 0) return Math.max(3000, s * 1000);
-      // fallback if unknown
-      return 30000;
+      return 30000; // fallback
     }
     return 0;
   }
@@ -295,17 +278,17 @@
         };
       }
     }
-    // fallback
     return { index: 0, offsetMs: 0, remainingMs: timeline.tl[0].durMs, timeline: timeline };
   }
 
-  // --- Image loading with smoother behavior (less “skipping”) ---
+  // --- Image swap (NO BLANKING while loading) ---
   function swapToImage(src, onReady) {
     var back = backImg();
     var front = topImg();
 
-    // do NOT blank the screen while loading
-    // keep front visible until back loads, then fade
+    // Keep current image visible while next loads (prevents black screen)
+    if (front && front.src) front.style.opacity = "1";
+
     var done = false;
     var IMAGE_TIMEOUT_MS = 20000;
 
@@ -323,6 +306,8 @@
       clearTimeout(hang);
 
       hideLogoFallback();
+
+      // Fade in new image, fade out old
       back.style.opacity = "1";
       front.style.opacity = "0";
       imgAOnTop = !imgAOnTop;
@@ -344,30 +329,43 @@
   }
 
   function playImage(src, durationMs, remainMsOverride) {
-    removeVideo();
-    hideLogoFallback();
+    // DO NOT remove video until image is ready, otherwise you create black gap.
+    // But we must stop audio/video decode eventually; so:
+    // - Keep the video playing until image loads (image layers are under it)
+    // - When image is ready, remove video.
+    var remain = (typeof remainMsOverride === "number") ? remainMsOverride : durationMs;
+    remain = Math.max(700, remain);
 
-    // schedule according to sync remaining time
-    var remain = typeof remainMsOverride === "number" ? remainMsOverride : durationMs;
+    hideLogoFallback();
+    setMediaStatus(""); // silent
 
     swapToImage(src, function (ok) {
       if (!ok) {
+        // if failed, remove video anyway (fallback)
+        removeVideo();
         scheduleNext(900);
         return;
       }
-      scheduleNext(Math.max(700, remain));
+      // Now image is visible; safe to remove video with ZERO black frame
+      removeVideo();
+      scheduleNext(remain);
     });
   }
 
-  // --- Video: reduce buffering + keep autoplay reliable on TVs ---
+  // --- Video: put video ABOVE images so images are always there under it ---
   function playVideo(src, offsetMs, remainMs) {
-    removeVideo();
     hideLogoFallback();
+
+    // Keep last image visible under the video (no black)
+    keepLastImageVisible();
+
+    // Remove any previous video, then create new
+    removeVideo();
 
     var v = document.createElement("video");
     v.src = mediaUrl(src);
     v.autoplay = true;
-    v.muted = true;             // IMPORTANT: TVs often require muted autoplay
+    v.muted = true;          // TV autoplay reliable
     v.playsInline = true;
     v.preload = "auto";
     v.setAttribute("webkit-playsinline", "true");
@@ -380,8 +378,9 @@
     v.style.bottom = "0";
     v.style.width = "100%";
     v.style.height = "100%";
-    v.style.objectFit = "cover"; // keeps video filling the frame (no shrink)
-    v.style.background = "#000";
+    v.style.objectFit = "cover";
+    v.style.background = "transparent";
+    v.style.zIndex = "5"; // above images
 
     frame.appendChild(v);
 
@@ -389,7 +388,6 @@
     var lastT = -1;
     var stallAt = Date.now();
 
-    // If it can’t start quickly, skip (prevents long “Buffering…”)
     var START_TIMEOUT_MS = 25000;
     var firstFrameTimer = setTimeout(function () {
       if (!started) {
@@ -402,23 +400,20 @@
 
     function failVideo(msg) {
       clearTimeout(firstFrameTimer);
-      setMediaStatus(msg || "Video error, skipping…");
+      if (msg) setMediaStatus(msg);
       removeVideo();
       showLogoFallback();
       scheduleNext(1200);
     }
 
-    // Apply sync offset after metadata is ready
     v.onloadedmetadata = function () {
       try {
         if (typeof offsetMs === "number" && isFinite(offsetMs) && offsetMs > 0) {
           var offsetSec = offsetMs / 1000;
-          // If offset is too close to end, jump to next item
           if (v.duration && isFinite(v.duration) && offsetSec >= v.duration - 0.8) {
             failVideo("Video offset near end, skipping…");
             return;
           }
-          // best-effort seek
           v.currentTime = offsetSec;
         }
       } catch (_) {}
@@ -432,30 +427,26 @@
         clearTimeout(firstFrameTimer);
         setMediaStatus("");
       }
-
-      // freeze watchdog
       if (Date.now() - stallAt > 45000) {
         failVideo("Video froze, skipping…");
       }
 
-      // sync-based end (don’t rely only on onended)
-      if (typeof remainMs === "number" && remainMs > 0) {
-        // once started, schedule based on remaining time only once
-        // (avoid double scheduling)
-        if (!v.__scheduledEnd) {
-          v.__scheduledEnd = true;
-          setTimeout(function () {
-            // if still same video mounted, move on
-            try {
-              failVideo(""); // uses scheduleNext(1200) -> smooth next
-            } catch (_) {}
-          }, Math.max(1200, remainMs));
-        }
+      // Sync-based end timer (avoid long tail buffering / black)
+      if (typeof remainMs === "number" && remainMs > 0 && !v.__scheduledEnd) {
+        v.__scheduledEnd = true;
+        setTimeout(function () {
+          // We don't want a black screen—keep images underneath visible
+          keepLastImageVisible();
+          // Remove video and move on
+          removeVideo();
+          scheduleNext(600);
+        }, Math.max(1200, remainMs));
       }
     };
 
     v.onended = function () {
       clearTimeout(firstFrameTimer);
+      keepLastImageVisible();
       removeVideo();
       scheduleNext(600);
     };
@@ -464,9 +455,8 @@
       failVideo("Video error, skipping…");
     };
 
-    v.onwaiting = function () {
-      // keep silent; watchdog handles long waits
-    };
+    // Don’t show Buffering; watchdog handles it silently
+    v.onwaiting = function () {};
 
     try {
       var p = v.play();
@@ -476,7 +466,9 @@
     }
   }
 
-  // ===== Manifest + Synced playback =====
+  /* =========================
+     SYNCED PLAYBACK
+  ========================== */
   function startSyncedPlayback() {
     if (!playlist || !playlist.length) {
       showLogoFallback();
@@ -495,11 +487,9 @@
       var seg = st.timeline.tl[st.index];
       var it = seg.item;
 
-      // Set idx to the NEXT timeline item (so playNext continues correctly)
-      // Convert timeline index to playlist “next” index by searching item src/type
-      // (simple approach: just move sequentially inside timeline)
+      // Next index based on timeline (keeps all TVs aligned)
       var nextIndexInTimeline = (st.index + 1) % st.timeline.tl.length;
-      idx = nextIndexInTimeline; // idx used in playNext()
+      idx = nextIndexInTimeline;
 
       clearNext();
 
@@ -530,15 +520,15 @@
       return;
     }
 
-    // Non-synced fallback path (kept), but we still try to keep it smooth.
-    if (item.type === "image") return playImage(item.src, itemDurationMs(item), itemDurationMs(item));
-    if (item.type === "video") return playVideo(item.src, 0, itemDurationMs(item));
+    var dur = itemDurationMs(item);
+    if (item.type === "image") return playImage(item.src, dur, dur);
+    if (item.type === "video") return playVideo(item.src, 0, dur);
 
     scheduleNext(600);
   }
 
   function loadManifest(silent) {
-    // Only cache-bust the MANIFEST (not media files) to keep data low and caching high.
+    // Only cache-bust MANIFEST, not media files
     xhr(MANIFEST_URL + "?ts=" + Date.now(), function (err, res) {
       if (err) {
         if (!silent) setMediaStatus("Manifest offline (" + err + ")");
@@ -556,10 +546,8 @@
           return;
         }
 
-        // Always (re)start synced playback when manifest loads (first load or manual refresh)
-        if (!silent) {
-          startSyncedPlayback();
-        }
+        // Start synced playback (first load & manual refresh)
+        if (!silent) startSyncedPlayback();
       } catch (e) {
         if (!silent) setMediaStatus("Manifest JSON error");
         showLogoFallback();
@@ -571,20 +559,19 @@
   showLogoFallback();
   loadManifest(false);
 
-  // Refresh manifest (rare, data-saving)
   setInterval(function () { loadManifest(true); }, MANIFEST_REFRESH_MS);
 
-  // Periodic re-sync across TVs (keeps everyone aligned even with drift)
   function startResyncLoop() {
     if (resyncTimer) clearInterval(resyncTimer);
     resyncTimer = setInterval(function () {
-      // Don’t re-download manifest; just re-sync playback timing.
       startSyncedPlayback();
     }, RESYNC_MEDIA_MS);
   }
   startResyncLoop();
 
-  // ===== TABLES (LIVE) =====
+  /* =========================
+     TABLES (LIVE, DATA-SAVING)
+  ========================== */
   var CSV_PROGRESS =
     "https://docs.google.com/spreadsheets/d/e/2PACX-1vSKpulVdyocoyi3Vj-BHBG9aOcfsG-QkgLtwlLGjbWFy_YkTmiN5mOsiYfWS6_sqLNtS4hCie2c3JDH/pub?gid=2111665249&single=true&output=csv";
 
@@ -617,8 +604,7 @@
     if (!progressBody) return;
 
     if (!progressData.length) {
-      progressBody.innerHTML =
-        '<tr><td colspan="5" class="muted">No cars in progress</td></tr>';
+      progressBody.innerHTML = '<tr><td colspan="5" class="muted">No cars in progress</td></tr>';
       if (boardMeta) boardMeta.textContent = "Live · 0";
       return;
     }
@@ -632,20 +618,17 @@
     var html = "";
     for (var i = 0; i < slice.length; i++) {
       var r = slice[i];
-      html +=
-        "<tr>" +
-        "<td>" + esc(r.customer) + "</td>" +
-        "<td>" + esc(r.model) + "</td>" +
-        "<td>" + esc(r.year) + "</td>" +
-        "<td>" + esc(r.chassis) + "</td>" +
-        "<td>" + esc(r.film) + "</td>" +
-        "</tr>";
+      html += "<tr>"
+        + "<td>" + esc(r.customer) + "</td>"
+        + "<td>" + esc(r.model) + "</td>"
+        + "<td>" + esc(r.year) + "</td>"
+        + "<td>" + esc(r.chassis) + "</td>"
+        + "<td>" + esc(r.film) + "</td>"
+        + "</tr>";
     }
 
     progressBody.innerHTML = html;
-    if (boardMeta)
-      boardMeta.textContent =
-        "Live · " + progressData.length + " · Page " + (progressPage + 1) + "/" + pages;
+    if (boardMeta) boardMeta.textContent = "Live · " + progressData.length + " · Page " + (progressPage + 1) + "/" + pages;
 
     progressPage++;
   }
@@ -654,8 +637,7 @@
     if (!revisitBody) return;
 
     if (!revisitData.length) {
-      revisitBody.innerHTML =
-        '<tr><td colspan="4" class="muted">No bookings today</td></tr>';
+      revisitBody.innerHTML = '<tr><td colspan="4" class="muted">No bookings today</td></tr>';
       if (revisitMeta) revisitMeta.textContent = "Live · 0";
       return;
     }
@@ -669,19 +651,16 @@
     var html = "";
     for (var i = 0; i < slice.length; i++) {
       var r = slice[i];
-      html +=
-        "<tr>" +
-        "<td>" + esc(r.status) + "</td>" +
-        "<td>" + esc(r.name) + "</td>" +
-        "<td>" + esc(r.car) + "</td>" +
-        "<td>" + esc(r.color) + "</td>" +
-        "</tr>";
+      html += "<tr>"
+        + "<td>" + esc(r.status) + "</td>"
+        + "<td>" + esc(r.name) + "</td>"
+        + "<td>" + esc(r.car) + "</td>"
+        + "<td>" + esc(r.color) + "</td>"
+        + "</tr>";
     }
 
     revisitBody.innerHTML = html;
-    if (revisitMeta)
-      revisitMeta.textContent =
-        "Live · " + revisitData.length + " · Page " + (revisitPage + 1) + "/" + pages;
+    if (revisitMeta) revisitMeta.textContent = "Live · " + revisitData.length + " · Page " + (revisitPage + 1) + "/" + pages;
 
     revisitPage++;
   }
@@ -697,10 +676,7 @@
   function loadProgress() {
     if (boardMeta) boardMeta.textContent = "Updating…";
     xhr(CSV_PROGRESS + "&t=" + Date.now(), function (err, res) {
-      if (err) {
-        if (boardMeta) boardMeta.textContent = "Offline";
-        return;
-      }
+      if (err) { if (boardMeta) boardMeta.textContent = "Offline"; return; }
       try {
         var rows = parseCSV(res).slice(1);
         var data = [];
@@ -708,11 +684,11 @@
         // PROGRESS: E,G,I,J,K => 4,6,8,9,10
         for (var i = 0; i < rows.length; i++) {
           var r = rows[i];
-          var customer = (r[4] || "").trim(); // E
-          var model = (r[6] || "").trim();    // G
-          var year = (r[8] || "").trim();     // I
-          var chassis = (r[9] || "").trim();  // J
-          var film = (r[10] || "").trim();    // K
+          var customer = (r[4] || "").trim();
+          var model = (r[6] || "").trim();
+          var year = (r[8] || "").trim();
+          var chassis = (r[9] || "").trim();
+          var film = (r[10] || "").trim();
           if (!customer) continue;
           data.push({ customer: customer, model: model, year: year, chassis: chassis, film: film });
         }
@@ -722,7 +698,6 @@
           progressPage = 0;
           startPaging();
         }
-
       } catch (e) {
         if (boardMeta) boardMeta.textContent = "Error";
       }
@@ -732,10 +707,7 @@
   function loadRevisit() {
     if (revisitMeta) revisitMeta.textContent = "Updating…";
     xhr(CSV_REVISIT + "&t=" + Date.now(), function (err, res) {
-      if (err) {
-        if (revisitMeta) revisitMeta.textContent = "Offline";
-        return;
-      }
+      if (err) { if (revisitMeta) revisitMeta.textContent = "Offline"; return; }
       try {
         var rows = parseCSV(res).slice(1);
         var data = [];
@@ -743,10 +715,10 @@
         // REVISIT: A,D,F,G => 0,3,5,6
         for (var i = 0; i < rows.length; i++) {
           var r = rows[i];
-          var status = (r[0] || "").trim(); // A
-          var name = (r[3] || "").trim();   // D
-          var car = (r[5] || "").trim();    // F
-          var color = (r[6] || "").trim();  // G
+          var status = (r[0] || "").trim();
+          var name = (r[3] || "").trim();
+          var car = (r[5] || "").trim();
+          var color = (r[6] || "").trim();
           if (!name) continue;
           data.push({ status: status, name: name, car: car, color: color });
         }
@@ -756,7 +728,6 @@
           revisitPage = 0;
           startPaging();
         }
-
       } catch (e) {
         if (revisitMeta) revisitMeta.textContent = "Error";
       }
@@ -770,12 +741,11 @@
       loadManifest(false);
       loadProgress();
       loadRevisit();
-      // also immediate re-sync
       startSyncedPlayback();
     };
   }
 
-  // Initial + Auto refresh (data-saving)
+  // Initial + Auto refresh
   loadProgress();
   loadRevisit();
   startPaging();
@@ -784,5 +754,4 @@
   setInterval(loadRevisit, TABLE_REFRESH_MS);
 
   debug("Ready ✓");
-
 })();
